@@ -38,7 +38,7 @@ def generate_cc_impl(ctx):
     if f != "external/com_google_protobuf/src/google/protobuf":
       print("Error: Only @com_google_protobuf//:well_known_protos is supported")
     else:
-      # f points to "external/submodule_protobuf/src/google/protobuf"
+      # f points to "external/com_google_protobuf/src/google/protobuf"
       # add -I argument to protoc so it knows where to look for the proto files.
       arguments += ["-I{0}".format(f + "/../..")]
       well_known_proto_files = [f for f in ctx.attr.well_known_protos.files]
