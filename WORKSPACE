@@ -73,3 +73,9 @@ git_repository(
     commit = "4120a97945b41195a6223a600dae8e3b19bed19e",
     remote = "https://github.com/makdharma/mongoose.git",
 )
+
+git_repository(
+    name = "grpc_proto_repo",
+    commit = "3fbebb2d7be7b062586f3eedf4d61ec6bf39c48b",
+    remote = "https://github.com/ericgribkoff/grpc-proto.git",
+)
