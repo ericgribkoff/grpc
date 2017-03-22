@@ -32,33 +32,82 @@ licenses(["notice"])  # 3-clause BSD
 package(default_visibility = ["//visibility:public"])
 
 load("//:bazel/grpc_build_system.bzl", "grpc_proto_library")
+load("//:bazel/cc_grpc_library.bzl", "cc_grpc_library")
 
-#grpc_proto_library(
+grpc_proto_library(
+    name = "monitoring_proto",
+    srcs = [
+        "monitoring.proto",
+    ],
+    well_known_protos = "@com_google_protobuf//:well_known_protos",
+    deps = [
+        ":census_proto",
+    ],
+)
+
+grpc_proto_library(
+    name = "census_proto",
+    srcs = [
+        "census.proto",
+    ],
+    well_known_protos = "@com_google_protobuf//:well_known_protos",
+)
+
+#proto_library(
+#    name = "well_known_protos",
+#    #srcs = ["@com_google_protobuf//:well_known_protos"],
+#    srcs = ["@com_google_protobuf//:src/google/protobuf/any.proto"],
+#)
+#
+#proto_library(
 #    name = "monitoring_proto",
 #    srcs = [
 #        "monitoring.proto",
 #    ],
-#    well_known_protos = "@com_google_protobuf//:well_known_protos",
 #    deps = [
-#        ":census_proto",
+#        "census_proto",
+#        #"@com_google_protobuf//:well_known_protos",
 #    ],
+#    #    well_known_protos = "@com_google_protobuf//:well_known_protos",
 #)
-
-#grpc_proto_library(
+#
+#cc_proto_library(
+#    name = "monitoring_cc_proto",
+#    deps = ["monitoring_proto"],
+#)
+#
+#proto_library(
 #    name = "census_proto",
 #    srcs = [
 #        "census.proto",
 #    ],
+#    #    well_known_protos = "@com_google_protobuf//:well_known_protos",
+#)
+#
+#cc_proto_library(
+#    name = "census_cc_proto",
+#    deps = ["census_proto"],
+#)
+#
+#cc_grpc_library(
+#    name = "monitoring_grpc",
+#    srcs = ["monitoring_proto"],
+#    proto_only = True,
+#    use_external = False,
 #    well_known_protos = "@com_google_protobuf//:well_known_protos",
+#    deps = [
+#        "census_proto",
+#        "monitoring_cc_proto",
+#    ],
 #)
 
 cc_binary(
     name = "grpcz_client",
     srcs = ["grpcz_client.cc"],
     deps = [
-        #"monitoring_proto",
+        "monitoring_proto",
+        #"@grpc_proto_repo//services/src/main/proto/grpc/instrumentation/v1alpha:monitoring",
         "//external:gflags",
         "@mongoose_repo//:mongoose_lib",
-        "@grpc_proto_repo//services/src/main/proto/grpc/instrumentation/v1alpha:monitoring",
     ],
 )
