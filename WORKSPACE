@@ -66,3 +66,10 @@ local_repository(
     name = "com_github_gflags_gflags",
     path = "third_party/gflags",
 )
+
+# used for tools/grpcz/grpcz_client
+git_repository(
+    name   = "mongoose_repo",
+    commit = "4120a97945b41195a6223a600dae8e3b19bed19e",
+    remote = "https://github.com/makdharma/mongoose.git"
+)
