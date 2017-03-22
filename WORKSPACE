@@ -15,17 +15,17 @@ bind(
 
 bind(
     name = "protobuf",
-    actual = "@submodule_protobuf//:protobuf",
+    actual = "@com_google_protobuf//:protobuf",
 )
 
 bind(
     name = "protobuf_clib",
-    actual = "@submodule_protobuf//:protoc_lib",
+    actual = "@com_google_protobuf//:protoc_lib",
 )
 
 bind(
     name = "protocol_compiler",
-    actual = "@submodule_protobuf//:protoc",
+    actual = "@com_google_protobuf//:protoc",
 )
 
 bind(
@@ -51,7 +51,7 @@ new_local_repository(
 )
 
 new_local_repository(
-    name = "submodule_protobuf",
+    name = "com_google_protobuf",
     build_file = "third_party/protobuf/BUILD",
     path = "third_party/protobuf",
 )
@@ -69,7 +69,7 @@ local_repository(
 
 # used for tools/grpcz/grpcz_client
 git_repository(
-    name   = "mongoose_repo",
+    name = "mongoose_repo",
     commit = "4120a97945b41195a6223a600dae8e3b19bed19e",
-    remote = "https://github.com/makdharma/mongoose.git"
+    remote = "https://github.com/makdharma/mongoose.git",
 )

@@ -35,8 +35,8 @@ def generate_cc_impl(ctx):
   well_known_proto_files = []
   if ctx.attr.well_known_protos:
     f = ctx.attr.well_known_protos.files.to_list()[0].dirname
-    if f != "external/submodule_protobuf/src/google/protobuf":
-      print("Error: Only @submodule_protobuf//:well_known_protos is supported")
+    if f != "external/com_google_protobuf/src/google/protobuf":
+      print("Error: Only @com_google_protobuf//:well_known_protos is supported")
     else:
       # f points to "external/submodule_protobuf/src/google/protobuf"
       # add -I argument to protoc so it knows where to look for the proto files.
@@ -68,7 +68,7 @@ generate_cc = rule(
             mandatory = False,
             allow_empty = True,
         ),
-        "well_known_protos" : attr.label(
+        "well_known_protos": attr.label(
             mandatory = False,
         ),
         "_protoc": attr.label(
