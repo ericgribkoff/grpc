@@ -95,6 +95,7 @@ git_repository(
 
 git_repository(
     name = "grpc_proto_repo",
-    commit = "3fbebb2d7be7b062586f3eedf4d61ec6bf39c48b",
+    commit = "04810b0e388f62a1ea20ce558acb340e54926a69",
+    init_submodules = 1,
     remote = "https://github.com/ericgribkoff/grpc-proto.git",
 )

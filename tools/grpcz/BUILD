@@ -31,27 +31,27 @@ licenses(["notice"])  # 3-clause BSD
 
 package(default_visibility = ["//visibility:public"])
 
-load("//:bazel/grpc_build_system.bzl", "grpc_proto_library")
-load("//:bazel/cc_grpc_library.bzl", "cc_grpc_library")
+#load("//:bazel/grpc_build_system.bzl", "grpc_proto_library")
+#load("//:bazel/cc_grpc_library.bzl", "cc_grpc_library")
 
-grpc_proto_library(
-    name = "monitoring_proto",
-    srcs = [
-        "monitoring.proto",
-    ],
-    well_known_protos = "@com_google_protobuf//:well_known_protos",
-    deps = [
-        ":census_proto",
-    ],
-)
-
-grpc_proto_library(
-    name = "census_proto",
-    srcs = [
-        "census.proto",
-    ],
-    well_known_protos = "@com_google_protobuf//:well_known_protos",
-)
+#grpc_proto_library(
+#    name = "monitoring_proto",
+#    srcs = [
+#        "monitoring.proto",
+#    ],
+#    well_known_protos = "@com_google_protobuf//:well_known_protos",
+#    deps = [
+#        ":census_proto",
+#    ],
+#)
+#
+#grpc_proto_library(
+#    name = "census_proto",
+#    srcs = [
+#        "census.proto",
+#    ],
+#    well_known_protos = "@com_google_protobuf//:well_known_protos",
+#)
 
 #proto_library(
 #    name = "well_known_protos",
@@ -105,8 +105,8 @@ cc_binary(
     name = "grpcz_client",
     srcs = ["grpcz_client.cc"],
     deps = [
-        "monitoring_proto",
-        #"@grpc_proto_repo//services/src/main/proto/grpc/instrumentation/v1alpha:monitoring",
+        #"monitoring_proto",
+        "@grpc_proto_repo//grpc/instrumentation/v1alpha:monitoring",
         "//external:gflags",
         "@mongoose_repo//:mongoose_lib",
     ],
