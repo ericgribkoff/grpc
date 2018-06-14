@@ -13,6 +13,7 @@
 # limitations under the License.
 """Invocation-side implementation of gRPC Python."""
 
+import inspect
 import logging
 import sys
 import threading
@@ -678,7 +679,13 @@ def _run_channel_spin_thread(state):
     def channel_spin():
         while True:
             event = state.channel.next_call_event()
+            print(event)
+            print(type(event))
+            print(type(event.tag))
             call_completed = event.tag(event)
+            lines = inspect.getsource(event.tag)
+            print(lines)
+            print("call_completed: %b", call_completed)
             if call_completed:
                 with state.lock:
                     state.managed_calls -= 1
