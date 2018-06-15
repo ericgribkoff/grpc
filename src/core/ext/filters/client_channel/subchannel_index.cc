@@ -213,6 +213,7 @@ grpc_subchannel* grpc_subchannel_index_register(grpc_subchannel_key* key,
 
 void grpc_subchannel_index_unregister(grpc_subchannel_key* key,
                                       grpc_subchannel* constructed) {
+  gpr_log(GPR_DEBUG, "in grpc_subchannel_index_unregister");
   bool done = false;
   while (!done) {
     // Compare and swap loop:

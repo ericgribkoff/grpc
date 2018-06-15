@@ -483,6 +483,9 @@ static bool fd_is_shutdown(grpc_fd* fd) {
 /* Might be called multiple times */
 static void fd_shutdown(grpc_fd* fd, grpc_error* why) {
   if (fd->read_closure->SetShutdown(GRPC_ERROR_REF(why))) {
+    gpr_log(GPR_DEBUG, "in fd_shutdown: %s", grpc_error_string(why));
+    //gpr_log(GPR_DEBUG, "close()'ing instead");
+    //close(fd->fd);
     if (shutdown(fd->fd, SHUT_RDWR)) {
       if (errno != ENOTCONN) {
         gpr_log(GPR_ERROR, "Error shutting down fd %d. errno: %d",
@@ -491,6 +494,8 @@ static void fd_shutdown(grpc_fd* fd, grpc_error* why) {
     }
     fd->write_closure->SetShutdown(GRPC_ERROR_REF(why));
     fd->error_closure->SetShutdown(GRPC_ERROR_REF(why));
+  } else {
+    gpr_log(GPR_DEBUG, "in fd_shutdown, but not shutting down");
   }
   GRPC_ERROR_UNREF(why);
 }

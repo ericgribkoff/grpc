@@ -157,7 +157,9 @@ void grpc_shutdown(void) {
   int i;
   GRPC_API_TRACE("grpc_shutdown(void)", 0, ());
   gpr_mu_lock(&g_init_mu);
+  gpr_log(GPR_DEBUG, "g_initializations: %d", g_initializations);
   if (--g_initializations == 0) {
+    gpr_log(GPR_DEBUG, "Actually shutting down");
     {
       grpc_core::ExecCtx exec_ctx(0);
       {

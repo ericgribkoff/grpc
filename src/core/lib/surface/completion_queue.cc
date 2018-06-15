@@ -972,6 +972,7 @@ static void cq_finish_shutdown_next(grpc_completion_queue* cq) {
 }
 
 static void cq_shutdown_next(grpc_completion_queue* cq) {
+  gpr_log(GPR_DEBUG, "in cq_shutdown_next");
   cq_next_data* cqd = static_cast<cq_next_data*> DATA_FROM_CQ(cq);
 
   /* Need an extra ref for cq here because:
@@ -1210,6 +1211,7 @@ static void cq_finish_shutdown_pluck(grpc_completion_queue* cq) {
 /* NOTE: This function is almost exactly identical to cq_shutdown_next() but
  * merging them is a bit tricky and probably not worth it */
 static void cq_shutdown_pluck(grpc_completion_queue* cq) {
+  gpr_log(GPR_DEBUG, "in cq_shutdown_pluck");
   cq_pluck_data* cqd = static_cast<cq_pluck_data*> DATA_FROM_CQ(cq);
 
   /* Need an extra ref for cq here because:

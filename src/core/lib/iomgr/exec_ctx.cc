@@ -49,6 +49,10 @@ static void exec_ctx_run(grpc_closure* closure, grpc_error* error) {
 static void exec_ctx_sched(grpc_closure* closure, grpc_error* error) {
   grpc_closure_list_append(grpc_core::ExecCtx::Get()->closure_list(), closure,
                            error);
+//  gpr_log(GPR_DEBUG, "scheduling closure %p: created [%s:%d]: %s [%s:%d]",
+//          closure, closure->file_created, closure->line_created,
+//          closure->run ? "run" : "scheduled", closure->file_initiated,
+//          closure->line_initiated);
 }
 
 static gpr_timespec g_start_time;

@@ -98,6 +98,7 @@ static callback_state* get_state_for_batch(
    into transport stream operations */
 static void con_start_transport_stream_op_batch(
     grpc_call_element* elem, grpc_transport_stream_op_batch* batch) {
+  gpr_log(GPR_DEBUG, "in con_start_transport_stream_op_batch");
   call_data* calld = static_cast<call_data*>(elem->call_data);
   channel_data* chand = static_cast<channel_data*>(elem->channel_data);
   if (batch->recv_initial_metadata) {
@@ -180,6 +181,7 @@ static grpc_error* init_channel_elem(grpc_channel_element* elem,
 
 /* Destructor for channel_data */
 static void destroy_channel_elem(grpc_channel_element* elem) {
+  gpr_log(GPR_DEBUG, "in destroy_channel_elem");
   channel_data* cd = static_cast<channel_data*>(elem->channel_data);
   if (cd->transport) {
     grpc_transport_destroy(cd->transport);

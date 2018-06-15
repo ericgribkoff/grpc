@@ -15,18 +15,45 @@
 
 from __future__ import print_function
 
-import grpc
+#import grpc
+import multiprocessing
 
-import helloworld_pb2
-import helloworld_pb2_grpc
+#import helloworld_pb2
+#import helloworld_pb2_grpc
 
 
-def run():
-    channel = grpc.insecure_channel('localhost:50051')
-    stub = helloworld_pb2_grpc.GreeterStub(channel)
-    response = stub.SayHello(helloworld_pb2.HelloRequest(name='you'))
-    print("Greeter client received: " + response.message)
+from google.cloud import datastore
+
+
+#def doRpc():
+#    channel = grpc.insecure_channel('localhost:50051')
+#    stub = helloworld_pb2_grpc.GreeterStub(channel)
+#    response = stub.SayHello(helloworld_pb2.HelloRequest(name='you child'))
+#    print("Greeter client received: " + response.message)
+#
+#def run():
+#    channel = grpc.insecure_channel('localhost:50051')
+#    stub = helloworld_pb2_grpc.GreeterStub(channel)
+#    response = stub.SayHello(helloworld_pb2.HelloRequest(name='you'))
+#    print("Greeter client received: " + response.message)
+#    process = multiprocessing.Process(target=doRpc)
+#    process.start()
+
+
+def causeTrouble(where):
+    client = datastore.Client(project='some-project', namespace='kind')
+    print(client.get(client.key('kind', 'name')))
+    # The call to get() hangs forever; this line is never reached.
+    print('OK')
 
 
 if __name__ == '__main__':
-    run()
+    # Create a datastore client and do an RPC on it.
+    client = datastore.Client(project='some-project')
+    print(client.get(client.key('kind', 'name')))
+
+    # Kick off a child process while the first client is still in scope.
+    process = multiprocessing.Process(target=causeTrouble,
+                                      args=['child process'])
+    process.start()
+#    run()

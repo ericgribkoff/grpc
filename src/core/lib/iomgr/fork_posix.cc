@@ -27,6 +27,7 @@
 #include <grpc/fork.h>
 #include <grpc/support/log.h>
 
+#include "src/core/ext/filters/client_channel/subchannel_index.h"
 #include "src/core/lib/gpr/env.h"
 #include "src/core/lib/gprpp/fork.h"
 #include "src/core/lib/gprpp/thd.h"
@@ -47,9 +48,11 @@ bool registered_handlers = false;
 }  // namespace
 
 void grpc_prefork() {
+  gpr_log(GPR_DEBUG, "in grpc_prefork");
   grpc_core::ExecCtx exec_ctx;
   skipped_handler = true;
   if (!grpc_is_initialized()) {
+    gpr_log(GPR_DEBUG, "grpc_is_initialized()=false, skipping prefork handler");
     return;
   }
   if (!grpc_core::Fork::Enabled()) {
@@ -62,7 +65,8 @@ void grpc_prefork() {
     gpr_log(GPR_INFO,
             "Other threads are currently calling into gRPC, skipping fork() "
             "handlers");
-    return;
+    gpr_log(GPR_INFO, "Not actually skipping (experimental fork support enabled)");
+//    return;
   }
   grpc_timer_manager_set_threading(false);
   grpc_executor_set_threading(false);
@@ -72,6 +76,7 @@ void grpc_prefork() {
 }
 
 void grpc_postfork_parent() {
+  gpr_log(GPR_DEBUG, "in grpc_postfork_parent with skipped_handler=%d", skipped_handler);
   if (!skipped_handler) {
     grpc_core::Fork::AllowExecCtx();
     grpc_core::ExecCtx exec_ctx;
@@ -81,6 +86,7 @@ void grpc_postfork_parent() {
 }
 
 void grpc_postfork_child() {
+  gpr_log(GPR_DEBUG, "in grpc_postfork_child with skipped_handler=%d", skipped_handler);
   if (!skipped_handler) {
     grpc_core::Fork::AllowExecCtx();
     grpc_core::ExecCtx exec_ctx;
@@ -91,10 +97,17 @@ void grpc_postfork_child() {
 
 void grpc_fork_handlers_auto_register() {
   if (grpc_core::Fork::Enabled() & !registered_handlers) {
-#ifdef GRPC_POSIX_FORK_ALLOW_PTHREAD_ATFORK
+    gpr_log(GPR_DEBUG, "Fork support enabled");
+//#ifdef GRPC_POSIX_FORK_ALLOW_PTHREAD_ATFORK
+    gpr_log(GPR_DEBUG, "Actually registering handlers");
     pthread_atfork(grpc_prefork, grpc_postfork_parent, grpc_postfork_child);
     registered_handlers = true;
-#endif  // GRPC_POSIX_FORK_ALLOW_PTHREAD_ATFORK
+//#endif  // GRPC_POSIX_FORK_ALLOW_PTHREAD_ATFORK
+  } else {
+    gpr_log(GPR_DEBUG,
+            "Fork support not enabled; try running with the "
+            "environment variable GRPC_ENABLE_FORK_SUPPORT=1");
+    return;
   }
 }
 

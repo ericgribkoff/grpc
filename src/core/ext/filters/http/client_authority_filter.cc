@@ -49,6 +49,7 @@ struct channel_data {
 
 void authority_start_transport_stream_op_batch(
     grpc_call_element* elem, grpc_transport_stream_op_batch* batch) {
+  gpr_log(GPR_DEBUG, "in authority_start_transport_stream_op_batch");
   channel_data* chand = static_cast<channel_data*>(elem->channel_data);
   call_data* calld = static_cast<call_data*>(elem->call_data);
   // Handle send_initial_metadata.

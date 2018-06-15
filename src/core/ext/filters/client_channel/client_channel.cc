@@ -530,6 +530,7 @@ static void on_resolver_result_changed_locked(void* arg, grpc_error* error) {
 }
 
 static void start_transport_op_locked(void* arg, grpc_error* error_ignored) {
+  gpr_log(GPR_ERROR, "in start_transport_op_locked");
   grpc_transport_op* op = static_cast<grpc_transport_op*>(arg);
   grpc_channel_element* elem =
       static_cast<grpc_channel_element*>(op->handler_private.extra_arg);
@@ -544,6 +545,7 @@ static void start_transport_op_locked(void* arg, grpc_error* error_ignored) {
   }
 
   if (op->send_ping.on_initiate != nullptr || op->send_ping.on_ack != nullptr) {
+    gpr_log(GPR_ERROR, "handling ping in client_channel");
     if (chand->lb_policy == nullptr) {
       GRPC_CLOSURE_SCHED(
           op->send_ping.on_initiate,
@@ -561,6 +563,7 @@ static void start_transport_op_locked(void* arg, grpc_error* error_ignored) {
   }
 
   if (op->disconnect_with_error != GRPC_ERROR_NONE) {
+    gpr_log(GPR_ERROR, "handling disconnect_with_error op");
     if (chand->resolver != nullptr) {
       set_channel_connectivity_state_locked(
           chand, GRPC_CHANNEL_SHUTDOWN,
@@ -1215,6 +1218,7 @@ static void pending_batches_fail(grpc_call_element* elem, grpc_error* error,
 // This is called via the call combiner, so access to calld is synchronized.
 static void resume_pending_batch_in_call_combiner(void* arg,
                                                   grpc_error* ignored) {
+  gpr_log(GPR_DEBUG, "in resume_pending_batch_in_call_combiner");
   grpc_transport_stream_op_batch* batch =
       static_cast<grpc_transport_stream_op_batch*>(arg);
   grpc_subchannel_call* subchannel_call =
@@ -1263,6 +1267,7 @@ static void pending_batches_resume(grpc_call_element* elem) {
                              &batch->handler_private.closure, GRPC_ERROR_NONE,
                              "pending_batches_resume");
   }
+  gpr_log(GPR_DEBUG, "num batches: %lu", num_batches);
   GPR_ASSERT(num_batches > 0);
   // Note: This will release the call combiner.
   grpc_subchannel_call_process_op(calld->subchannel_call, batches[0]);
@@ -3015,6 +3020,7 @@ class ResolverResultWaiter {
 }  // namespace grpc_core
 
 static void start_pick_locked(void* arg, grpc_error* ignored) {
+  gpr_log(GPR_DEBUG, "in start_pick_locked");
   grpc_call_element* elem = static_cast<grpc_call_element*>(arg);
   call_data* calld = static_cast<call_data*>(elem->call_data);
   channel_data* chand = static_cast<channel_data*>(elem->channel_data);
@@ -3047,6 +3053,7 @@ static void start_pick_locked(void* arg, grpc_error* ignored) {
 
 static void cc_start_transport_stream_op_batch(
     grpc_call_element* elem, grpc_transport_stream_op_batch* batch) {
+  gpr_log(GPR_DEBUG, "in cc_start_transport_stream_op_batch");
   GPR_TIMER_SCOPE("cc_start_transport_stream_op_batch", 0);
   call_data* calld = static_cast<call_data*>(elem->call_data);
   channel_data* chand = static_cast<channel_data*>(elem->channel_data);

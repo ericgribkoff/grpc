@@ -100,7 +100,7 @@ def guide_route_chat(stub):
 
 
 def run():
-    channel = grpc.insecure_channel('localhost:50051')
+    channel = grpc.insecure_channel('localhost:8980')
     stub = route_guide_pb2_grpc.RouteGuideStub(channel)
     print("-------------- GetFeature --------------")
     guide_get_feature(stub)

@@ -49,6 +49,8 @@ class Channel final : public ChannelInterface,
   /// not available.
   grpc::string GetServiceConfigJSON() const;
 
+  void EnterLame();
+
  private:
   template <class InputMessage, class OutputMessage>
   friend class internal::BlockingUnaryCallImpl;
@@ -70,7 +72,8 @@ class Channel final : public ChannelInterface,
                               gpr_timespec deadline) override;
 
   const grpc::string host_;
-  grpc_channel* const c_channel_;  // owned
+  grpc_channel* c_channel_;  // owned
+  bool lame;
 };
 
 }  // namespace grpc

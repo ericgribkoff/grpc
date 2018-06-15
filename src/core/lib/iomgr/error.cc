@@ -169,6 +169,7 @@ static void unref_strs(grpc_error* err) {
 }
 
 static void error_destroy(grpc_error* err) {
+  gpr_log(GPR_DEBUG, "destroying error");
   GPR_ASSERT(!grpc_error_is_special(err));
   unref_errs(err);
   unref_strs(err);

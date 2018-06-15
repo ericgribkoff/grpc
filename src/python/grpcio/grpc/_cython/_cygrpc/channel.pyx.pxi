@@ -16,6 +16,20 @@ cimport cpython
 
 import threading
 
+cdef extern from "pthread.h" nogil:
+  int pthread_atfork(
+    void (*prepare)() nogil,
+    void (*parent)() nogil,
+    void (*child)() nogil)
+
+
+cdef void __atfork_child() nogil:
+  with gil:
+    print('AtForkChild')
+
+
+
+
 _INTERNAL_CALL_ERROR_MESSAGE_FORMAT = (
     'Internal gRPC call error %d. ' +
     'Please report to https://github.com/grpc/grpc/issues')
@@ -392,6 +406,7 @@ cdef class Channel:
       ChannelCredentials channel_credentials):
     arguments = () if arguments is None else tuple(arguments)
     grpc_init()
+    print('Installing fork handler', pthread_atfork(NULL, NULL, &__atfork_child))
     self._state = _ChannelState()
     self._vtable.copy = &_copy_pointer
     self._vtable.destroy = &_destroy_pointer

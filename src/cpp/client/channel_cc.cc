@@ -84,10 +84,19 @@ grpc::string Channel::GetServiceConfigJSON() const {
                              &channel_info.service_config_json);
 }
 
+void Channel::EnterLame() {
+  gpr_log(GPR_ERROR, "entering lame!");
+  lame = true;
+  grpc_channel_destroy(c_channel_);
+  c_channel_ = grpc_lame_client_channel_create(
+                                  host_.c_str(), GRPC_STATUS_INTERNAL,
+                                  "Channel closed in child after fork");
+}
+
 internal::Call Channel::CreateCall(const internal::RpcMethod& method,
                                    ClientContext* context,
                                    CompletionQueue* cq) {
-  const bool kRegistered = method.channel_tag() && context->authority().empty();
+  const bool kRegistered = !lame && method.channel_tag() && context->authority().empty();
   grpc_call* c_call = nullptr;
   if (kRegistered) {
     c_call = grpc_channel_create_registered_call(

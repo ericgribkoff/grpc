@@ -231,6 +231,7 @@ grpc_subchannel* grpc_subchannel_ref_from_weak_ref(
 }
 
 static void disconnect(grpc_subchannel* c) {
+  gpr_log(GPR_DEBUG, "in disconnect");
   grpc_subchannel_index_unregister(c->key, c);
   gpr_mu_lock(&c->mu);
   GPR_ASSERT(!c->disconnected);
@@ -316,11 +317,14 @@ static void parse_args_for_backoff_values(
 grpc_subchannel* grpc_subchannel_create(grpc_connector* connector,
                                         const grpc_subchannel_args* args) {
   grpc_subchannel_key* key = grpc_subchannel_key_create(args);
+  gpr_log(GPR_ERROR, "About to consult subchannel index");
   grpc_subchannel* c = grpc_subchannel_index_find(key);
   if (c) {
+    gpr_log(GPR_ERROR, "Found subchannel in index!");
     grpc_subchannel_key_destroy(key);
     return c;
   }
+  gpr_log(GPR_ERROR, "Subchannel not found in index");
 
   GRPC_STATS_INC_CLIENT_SUBCHANNELS_CREATED();
   c = static_cast<grpc_subchannel*>(gpr_zalloc(sizeof(*c)));
@@ -761,6 +765,7 @@ ConnectedSubchannel::~ConnectedSubchannel() {
 void ConnectedSubchannel::NotifyOnStateChange(
     grpc_pollset_set* interested_parties, grpc_connectivity_state* state,
     grpc_closure* closure) {
+  gpr_log(GPR_DEBUG, "in NotifyOnStateChange");
   grpc_transport_op* op = grpc_make_transport_op(nullptr);
   grpc_channel_element* elem;
   op->connectivity_state = state;

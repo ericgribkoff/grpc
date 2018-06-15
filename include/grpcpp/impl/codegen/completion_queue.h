@@ -32,6 +32,7 @@
 #ifndef GRPCPP_IMPL_CODEGEN_COMPLETION_QUEUE_H
 #define GRPCPP_IMPL_CODEGEN_COMPLETION_QUEUE_H
 
+#include <grpc/support/log.h>
 #include <grpc/impl/codegen/atm.h>
 #include <grpcpp/impl/codegen/completion_queue_tag.h>
 #include <grpcpp/impl/codegen/core_codegen_interface.h>
@@ -106,6 +107,7 @@ class CompletionQueue : private GrpcLibraryCodegen {
 
   /// Destructor. Destroys the owned wrapped completion queue / instance.
   ~CompletionQueue() {
+    gpr_log(GPR_DEBUG, "in ~CompletionQueue");
     g_core_codegen_interface->grpc_completion_queue_destroy(cq_);
   }
 
@@ -166,6 +168,7 @@ class CompletionQueue : private GrpcLibraryCodegen {
   /// \return true if got an event, false if the queue is fully drained and
   ///         shut down.
   bool Next(void** tag, bool* ok) {
+    exit(1);
     return (AsyncNextInternal(tag, ok,
                               g_core_codegen_interface->gpr_inf_future(
                                   GPR_CLOCK_REALTIME)) != SHUTDOWN);

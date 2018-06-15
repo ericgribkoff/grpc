@@ -263,6 +263,7 @@ grpc_error* grpc_channel_stack_builder_finish(
   for (filter_node* p = builder->begin.next; p != &builder->end; p = p->next) {
     num_filters++;
   }
+  gpr_log(GPR_DEBUG, "num_filters: %lu", num_filters);
 
   // create an array of filters
   const grpc_channel_filter** filters =

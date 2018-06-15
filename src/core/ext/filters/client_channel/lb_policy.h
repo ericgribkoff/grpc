@@ -144,6 +144,7 @@ class LoadBalancingPolicy
   virtual void ExitIdleLocked() GRPC_ABSTRACT;
 
   void Orphan() override {
+    gpr_log(GPR_DEBUG, "in Orphan()");
     // Invoke ShutdownAndUnrefLocked() inside of the combiner.
     GRPC_CLOSURE_SCHED(
         GRPC_CLOSURE_CREATE(&LoadBalancingPolicy::ShutdownAndUnrefLocked, this,

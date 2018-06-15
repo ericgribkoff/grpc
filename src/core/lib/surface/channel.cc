@@ -394,6 +394,7 @@ void grpc_channel_internal_unref(grpc_channel* c REF_ARG) {
 }
 
 static void destroy_channel(void* arg, grpc_error* error) {
+  gpr_log(GPR_DEBUG, "in destroy_channel");
   grpc_channel* channel = static_cast<grpc_channel*>(arg);
   grpc_channel_stack_destroy(CHANNEL_STACK_FROM_CHANNEL(channel));
   while (channel->registered_calls) {
@@ -419,6 +420,7 @@ void grpc_channel_destroy(grpc_channel* channel) {
   elem = grpc_channel_stack_element(CHANNEL_STACK_FROM_CHANNEL(channel), 0);
   elem->filter->start_transport_op(elem, op);
 
+  gpr_log(GPR_ERROR, "in grpc_channel_destroy");
   GRPC_CHANNEL_INTERNAL_UNREF(channel, "channel");
 }
 

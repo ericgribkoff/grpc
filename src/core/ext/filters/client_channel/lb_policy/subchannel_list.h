@@ -22,6 +22,7 @@
 #include <grpc/support/port_platform.h>
 
 #include <string.h>
+#include <unistd.h>
 
 #include <grpc/support/alloc.h>
 
@@ -195,6 +196,7 @@ class SubchannelList
 
   // Note: Caller must ensure that this is invoked inside of the combiner.
   void Orphan() override {
+    gpr_log(GPR_DEBUG, "in Orphan()");
     ShutdownLocked();
     InternallyRefCountedWithTracing<SubchannelListType>::Unref(DEBUG_LOCATION,
                                                                "shutdown");
@@ -411,6 +413,16 @@ void SubchannelData<SubchannelListType, SubchannelDataType>::
         grpc_connectivity_state_name(sd->pending_connectivity_state_unsafe_),
         grpc_error_string(error), sd->subchannel_list_->shutting_down());
   }
+//  if (sd->connected_subchannel() != nullptr) {
+//    gpr_log(GPR_DEBUG, "(%d) Sending disconnect_with_error(FORK?) op", ::getpid());
+//
+//    grpc_transport_op* op = grpc_make_transport_op(nullptr);
+//    op->disconnect_with_error = GRPC_ERROR_CREATE_FROM_STATIC_STRING("FORK");
+//    grpc_channel_element* elem;
+//    elem = grpc_channel_stack_element(sd->connected_subchannel()->channel_stack(), 0);
+//    elem->filter->start_transport_op(elem, op);
+//  }
+
   // If shutting down, unref subchannel and stop watching.
   if (sd->subchannel_list_->shutting_down() || error == GRPC_ERROR_CANCELLED) {
     sd->UnrefSubchannelLocked("connectivity_shutdown");

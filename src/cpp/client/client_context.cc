@@ -60,7 +60,9 @@ ClientContext::ClientContext()
 }
 
 ClientContext::~ClientContext() {
+  gpr_log(GPR_DEBUG, "In ~ClientContext");
   if (call_) {
+    gpr_log(GPR_DEBUG, "unreffing call");
     grpc_call_unref(call_);
   }
   g_client_callbacks->Destructor(this);

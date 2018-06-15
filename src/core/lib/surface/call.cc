@@ -513,6 +513,7 @@ void grpc_call_internal_unref(grpc_call* c REF_ARG) {
 }
 
 static void release_call(void* call, grpc_error* error) {
+  gpr_log(GPR_DEBUG, "in release_call");
   grpc_call* c = static_cast<grpc_call*>(call);
   grpc_channel* channel = c->channel;
   grpc_call_combiner_destroy(&c->call_combiner);
@@ -617,6 +618,7 @@ grpc_call_error grpc_call_cancel(grpc_call* call, void* reserved) {
 // This is called via the call combiner to start sending a batch down
 // the filter stack.
 static void execute_batch_in_call_combiner(void* arg, grpc_error* ignored) {
+  gpr_log(GPR_DEBUG, "in execute_batch_in_call_combiner");
   GPR_TIMER_SCOPE("execute_batch_in_call_combiner", 0);
   grpc_transport_stream_op_batch* batch =
       static_cast<grpc_transport_stream_op_batch*>(arg);

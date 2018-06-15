@@ -566,6 +566,7 @@ static void destroy_transport_locked(void* tp, grpc_error* error) {
 }
 
 static void destroy_transport(grpc_transport* gt) {
+  gpr_log(GPR_DEBUG, "in destroy_transport");
   grpc_chttp2_transport* t = reinterpret_cast<grpc_chttp2_transport*>(gt);
   GRPC_CLOSURE_SCHED(GRPC_CLOSURE_CREATE(destroy_transport_locked, t,
                                          grpc_combiner_scheduler(t->combiner)),
@@ -574,6 +575,7 @@ static void destroy_transport(grpc_transport* gt) {
 
 static void close_transport_locked(grpc_chttp2_transport* t,
                                    grpc_error* error) {
+  gpr_log(GPR_DEBUG, "in close_transport_locked");
   end_all_the_calls(t, GRPC_ERROR_REF(error));
   cancel_pings(t, GRPC_ERROR_REF(error));
   if (t->closed_with_error == GRPC_ERROR_NONE) {
@@ -1615,6 +1617,7 @@ static void perform_stream_op_locked(void* stream_op,
 
 static void perform_stream_op(grpc_transport* gt, grpc_stream* gs,
                               grpc_transport_stream_op_batch* op) {
+  gpr_log(GPR_DEBUG, "in perform_stream_op with: %s", grpc_transport_stream_op_batch_string(op));
   GPR_TIMER_SCOPE("perform_stream_op", 0);
   grpc_chttp2_transport* t = reinterpret_cast<grpc_chttp2_transport*>(gt);
   grpc_chttp2_stream* s = reinterpret_cast<grpc_chttp2_stream*>(gs);
@@ -1775,6 +1778,7 @@ static void perform_transport_op_locked(void* stream_op,
   }
 
   if (op->send_ping.on_initiate != nullptr || op->send_ping.on_ack != nullptr) {
+    gpr_log(GPR_DEBUG, "handling ping op in chttp2_transport");
     send_ping_locked(t, op->send_ping.on_initiate, op->send_ping.on_ack);
     grpc_chttp2_initiate_write(t, GRPC_CHTTP2_INITIATE_WRITE_APPLICATION_PING);
   }
@@ -1786,6 +1790,7 @@ static void perform_transport_op_locked(void* stream_op,
   }
 
   if (op->disconnect_with_error != GRPC_ERROR_NONE) {
+    gpr_log(GPR_DEBUG, "got disconnect_with_error op");
     close_transport_locked(t, op->disconnect_with_error);
   }
 
@@ -1795,6 +1800,7 @@ static void perform_transport_op_locked(void* stream_op,
 }
 
 static void perform_transport_op(grpc_transport* gt, grpc_transport_op* op) {
+  gpr_log(GPR_DEBUG, "in perform_transport_op with: %s", grpc_transport_op_string(op));
   grpc_chttp2_transport* t = reinterpret_cast<grpc_chttp2_transport*>(gt);
   if (grpc_http_trace.enabled()) {
     char* msg = grpc_transport_op_string(op);
@@ -2011,6 +2017,7 @@ static void remove_stream(grpc_chttp2_transport* t, uint32_t id,
 
 void grpc_chttp2_cancel_stream(grpc_chttp2_transport* t, grpc_chttp2_stream* s,
                                grpc_error* due_to_error) {
+  gpr_log(GPR_DEBUG, "in cancel_stream: %s", grpc_error_string(due_to_error));
   if (!t->is_client && !s->sent_trailing_metadata &&
       grpc_error_has_clear_grpc_status(due_to_error)) {
     close_from_api(t, s, due_to_error);
@@ -2019,14 +2026,19 @@ void grpc_chttp2_cancel_stream(grpc_chttp2_transport* t, grpc_chttp2_stream* s,
 
   if (!s->read_closed || !s->write_closed) {
     if (s->id != 0) {
-      grpc_http2_error_code http_error;
-      grpc_error_get_status(due_to_error, s->deadline, nullptr, nullptr,
-                            &http_error, nullptr);
-      grpc_slice_buffer_add(
-          &t->qbuf,
-          grpc_chttp2_rst_stream_create(
-              s->id, static_cast<uint32_t>(http_error), &s->stats.outgoing));
-      grpc_chttp2_initiate_write(t, GRPC_CHTTP2_INITIATE_WRITE_RST_STREAM);
+      if (due_to_error == GRPC_ERROR_NONE) {
+        grpc_http2_error_code http_error;
+        grpc_error_get_status(due_to_error, s->deadline, nullptr, nullptr,
+                              &http_error, nullptr);
+        grpc_slice_buffer_add(
+            &t->qbuf,
+            grpc_chttp2_rst_stream_create(
+                s->id, static_cast<uint32_t>(http_error), &s->stats.outgoing));
+        gpr_log(GPR_DEBUG, "writing RST_STREAM");
+        grpc_chttp2_initiate_write(t, GRPC_CHTTP2_INITIATE_WRITE_RST_STREAM);
+      } else {
+        gpr_log(GPR_DEBUG, "not writing RST_STREAM due to error %s", grpc_error_string(due_to_error));
+      }
     }
   }
   if (due_to_error != GRPC_ERROR_NONE && !s->seen_error) {

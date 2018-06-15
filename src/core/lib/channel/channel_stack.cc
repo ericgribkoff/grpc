@@ -94,6 +94,7 @@ grpc_error* grpc_channel_stack_init(
     const grpc_channel_filter** filters, size_t filter_count,
     const grpc_channel_args* channel_args, grpc_transport* optional_transport,
     const char* name, grpc_channel_stack* stack) {
+  gpr_log(GPR_DEBUG, "in grpc_channel_stack_init");
   size_t call_size =
       ROUND_UP_TO_ALIGNMENT_SIZE(sizeof(grpc_call_stack)) +
       ROUND_UP_TO_ALIGNMENT_SIZE(filter_count * sizeof(grpc_call_element));
@@ -119,6 +120,7 @@ grpc_error* grpc_channel_stack_init(
     args.is_first = i == 0;
     args.is_last = i == (filter_count - 1);
     elems[i].filter = filters[i];
+    gpr_log(GPR_DEBUG, "filter %lu: %s", i, filters[i]->name);
     elems[i].channel_data = user_data;
     grpc_error* error = elems[i].filter->init_channel_elem(&elems[i], &args);
     if (error != GRPC_ERROR_NONE) {
@@ -141,6 +143,7 @@ grpc_error* grpc_channel_stack_init(
 }
 
 void grpc_channel_stack_destroy(grpc_channel_stack* stack) {
+  gpr_log(GPR_DEBUG, "in grpc_channel_stack_destroy");
   grpc_channel_element* channel_elems = CHANNEL_ELEMS_FROM_STACK(stack);
   size_t count = stack->count;
   size_t i;
@@ -155,6 +158,7 @@ grpc_error* grpc_call_stack_init(grpc_channel_stack* channel_stack,
                                  int initial_refs, grpc_iomgr_cb_func destroy,
                                  void* destroy_arg,
                                  const grpc_call_element_args* elem_args) {
+  gpr_log(GPR_DEBUG, "in grpc_call_stack_init");
   grpc_channel_element* channel_elems = CHANNEL_ELEMS_FROM_STACK(channel_stack);
   size_t count = channel_stack->count;
   grpc_call_element* call_elems;
@@ -172,6 +176,7 @@ grpc_error* grpc_call_stack_init(grpc_channel_stack* channel_stack,
   grpc_error* first_error = GRPC_ERROR_NONE;
   for (i = 0; i < count; i++) {
     call_elems[i].filter = channel_elems[i].filter;
+    gpr_log(GPR_DEBUG, "filter %lu: %s", i, call_elems[i].filter->name);
     call_elems[i].channel_data = channel_elems[i].channel_data;
     call_elems[i].call_data = user_data;
     grpc_error* error =
@@ -235,6 +240,7 @@ void grpc_channel_next_get_info(grpc_channel_element* elem,
 }
 
 void grpc_channel_next_op(grpc_channel_element* elem, grpc_transport_op* op) {
+  gpr_log(GPR_DEBUG, "in grpc_channel_next_op");
   grpc_channel_element* next_elem = elem + 1;
   next_elem->filter->start_transport_op(next_elem, op);
 }
