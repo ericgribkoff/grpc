@@ -14,17 +14,20 @@
 
 import threading
 import time #TODO remove
+import traceback
 
 cdef void __prefork() nogil:
   with gil:
-    def waitAndUnlock():
-      time.sleep(3)
-      print('waking up and finishing!')
-      thread_barrier.decrement_threads()
-    t = threading.Thread(target=waitAndUnlock)
-    thread_barrier.increment_threads()
-    t.start()
-    print('num_threads went to 0')
+#    def waitAndUnlock():
+#      time.sleep(3)
+#      print('waking up and finishing!')
+#      thread_barrier.decrement_threads()
+#    t = threading.Thread(target=waitAndUnlock)
+#    thread_barrier.increment_threads()
+#    t.start()
+#    print('num_threads went to 0')
+    traceback.print_exc()
+    print('invoked?')
     print('awaiting tb.num_threads=0')
     print(thread_barrier.await_zero_threads(5))
     print('tb.num_threads=0')

@@ -790,6 +790,7 @@ def _spawn_delivery(state, callbacks):
 
 # NOTE(https://github.com/grpc/grpc/issues/3064): We'd rather not poll.
 def _poll_connectivity(state, channel, initial_try_to_connect):
+    cygrpc.thread_barrier.increment_threads()
     try_to_connect = initial_try_to_connect
     connectivity = channel.check_connectivity_state(try_to_connect)
     with state.lock:
@@ -823,6 +824,7 @@ def _poll_connectivity(state, channel, initial_try_to_connect):
                     callbacks = _deliveries(state)
                     if callbacks:
                         _spawn_delivery(state, callbacks)
+    cygrpc.thread_barrier.decrement_threads()
 
 
 def _moot(state):
