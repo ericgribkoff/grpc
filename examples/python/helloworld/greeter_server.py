@@ -15,6 +15,7 @@
 
 from concurrent import futures
 import time
+import sys
 
 import grpc
 
@@ -31,9 +32,14 @@ class Greeter(helloworld_pb2_grpc.GreeterServicer):
 
 
 def serve():
+    if len(sys.argv) > 1:
+      port = int(sys.argv[1])
+    else:
+      port = 50051
+    print(port)
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
     helloworld_pb2_grpc.add_GreeterServicer_to_server(Greeter(), server)
-    server.add_insecure_port('[::]:50051')
+    server.add_insecure_port('localhost:%d' % port)
     server.start()
     try:
         while True:

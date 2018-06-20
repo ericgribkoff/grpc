@@ -50,6 +50,7 @@ void grpc_prefork() {
   grpc_core::ExecCtx exec_ctx;
   skipped_handler = true;
   if (!grpc_is_initialized()) {
+    gpr_log(GPR_ERROR, "gRPC not initialized");
     return;
   }
   if (!grpc_core::Fork::Enabled()) {
@@ -59,7 +60,7 @@ void grpc_prefork() {
     return;
   }
   if (!grpc_core::Fork::BlockExecCtx()) {
-    gpr_log(GPR_INFO,
+    gpr_log(GPR_ERROR,
             "Other threads are currently calling into gRPC, skipping fork() "
             "handlers");
     return;
@@ -90,8 +91,11 @@ void grpc_postfork_child() {
 }
 
 void grpc_fork_handlers_auto_register() {
+  gpr_log(GPR_ERROR, "grpc_fork_handlers_auto_register()");
   if (grpc_core::Fork::Enabled() & !registered_handlers) {
+    gpr_log(GPR_ERROR, "enabled pending compiler flag");
 #ifdef GRPC_POSIX_FORK_ALLOW_PTHREAD_ATFORK
+    gpr_log(GPR_ERROR, "actually registering fork handlers");
     pthread_atfork(grpc_prefork, grpc_postfork_parent, grpc_postfork_child);
     registered_handlers = true;
 #endif  // GRPC_POSIX_FORK_ALLOW_PTHREAD_ATFORK

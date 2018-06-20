@@ -399,19 +399,19 @@ cdef class Channel:
     cdef _ArgumentsProcessor arguments_processor = _ArgumentsProcessor(
         arguments)
     cdef grpc_channel_args *c_arguments = arguments_processor.c(&self._vtable)
-    if channel_credentials is None:
-      self._state.c_channel = grpc_insecure_channel_create(
-          <char *>target, c_arguments, NULL)
-    else:
-      c_channel_credentials = channel_credentials.c()
-      self._state.c_channel = grpc_secure_channel_create(
-          c_channel_credentials, <char *>target, c_arguments, NULL)
-      grpc_channel_credentials_release(c_channel_credentials)
-    self._state.c_call_completion_queue = (
-        grpc_completion_queue_create_for_next(NULL))
-    self._state.c_connectivity_completion_queue = (
-        grpc_completion_queue_create_for_next(NULL))
-    self._arguments = arguments
+#    if channel_credentials is None:
+#      self._state.c_channel = grpc_insecure_channel_create(
+#          <char *>target, c_arguments, NULL)
+#    else:
+#      c_channel_credentials = channel_credentials.c()
+#      self._state.c_channel = grpc_secure_channel_create(
+#          c_channel_credentials, <char *>target, c_arguments, NULL)
+#      grpc_channel_credentials_release(c_channel_credentials)
+#    self._state.c_call_completion_queue = (
+#        grpc_completion_queue_create_for_next(NULL))
+#    self._state.c_connectivity_completion_queue = (
+#        grpc_completion_queue_create_for_next(NULL))
+#    self._arguments = arguments
 
   def target(self):
     cdef char *c_target

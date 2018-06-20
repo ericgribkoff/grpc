@@ -233,6 +233,7 @@ def try_cythonize(extensions, linetracing=False, mandatory=True):
     if linetracing:
         additional_define_macros = [('CYTHON_TRACE_NOGIL', '1')]
         cython_compiler_directives['linetrace'] = True
+    print('compiler directives: ', cython_compiler_directives)
     return Cython.Build.cythonize(
         extensions,
         include_path=[
@@ -240,6 +241,7 @@ def try_cythonize(extensions, linetracing=False, mandatory=True):
             for extension in extensions
             for include_dir in extension.include_dirs
         ] + [CYTHON_STEM],
+        gdb_debug=True,
         compiler_directives=cython_compiler_directives)
 
 

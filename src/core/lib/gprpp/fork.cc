@@ -20,9 +20,11 @@
 
 #include "src/core/lib/gprpp/fork.h"
 
+#include <execinfo.h>
 #include <string.h>
 
 #include <grpc/support/alloc.h>
+#include <grpc/support/log.h>
 #include <grpc/support/sync.h>
 #include <grpc/support/time.h>
 
@@ -57,6 +59,7 @@ class ExecCtxState {
 
   void IncExecCtxCount() {
     gpr_atm count = gpr_atm_no_barrier_load(&count_);
+    gpr_log(GPR_ERROR, "pre-increment count: %d", count);
     while (true) {
       if (count <= BLOCKED(1)) {
         // This only occurs if we are trying to fork.  Wait until the fork()
@@ -75,7 +78,10 @@ class ExecCtxState {
     }
   }
 
-  void DecExecCtxCount() { gpr_atm_no_barrier_fetch_add(&count_, -1); }
+  void DecExecCtxCount() {
+    gpr_atm count = gpr_atm_no_barrier_fetch_add(&count_, -1);
+    gpr_log(GPR_ERROR, "count after decrement: %d", count - 1);
+  }
 
   bool BlockExecCtx() {
     // Assumes there is an active ExecCtx when this function is called
@@ -211,19 +217,38 @@ void Fork::Enable(bool enable) {
 }
 
 void Fork::IncExecCtxCount() {
+  gpr_log(GPR_ERROR, "IncExecCtxCount");
   if (supportEnabled_) {
     execCtxState_->IncExecCtxCount();
+    void *array[50];
+    size_t size;
+    char **strings;
+    size_t i;
+
+    size = backtrace (array, 50);
+    strings = backtrace_symbols (array, size);
+
+    gpr_log(GPR_ERROR, "Obtained %zd stack frames.", size);
+
+    for (i = 0; i < size; i++) {
+      gpr_log(GPR_ERROR, "%s", strings[i]);
+    }
+
+    free (strings);
   }
 }
 
 void Fork::DecExecCtxCount() {
+  gpr_log(GPR_ERROR, "DecExecCtxCount");
   if (supportEnabled_) {
     execCtxState_->DecExecCtxCount();
   }
 }
 
 bool Fork::BlockExecCtx() {
+  gpr_log(GPR_ERROR, "in BlockExecCtx");
   if (supportEnabled_) {
+    gpr_log(GPR_ERROR, "supportEnabled_ = true");
     return execCtxState_->BlockExecCtx();
   }
   return false;

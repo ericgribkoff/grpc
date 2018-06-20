@@ -236,6 +236,9 @@ if 'darwin' in sys.platform and PY3:
         r'macosx-10.7-\1',
         util.get_platform())
 
+if ENABLE_CYTHON_TRACING:
+  DEFINE_MACROS += (('CYTHON_TRACE_NOGIL', '1'),)
+
 def cython_extensions_and_necessity():
   cython_module_files = [os.path.join(PYTHON_STEM,
                                name.replace('.', '/') + '.pyx')

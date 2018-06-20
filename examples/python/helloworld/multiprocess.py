@@ -24,26 +24,33 @@ import helloworld_pb2
 import helloworld_pb2_grpc
 
 def doRpc():
-    channel = grpc.insecure_channel('localhost:50051')
+    print('In doRpc()')
+    channel = grpc.insecure_channel('localhost:50052')
     stub = helloworld_pb2_grpc.GreeterStub(channel)
     response = stub.SayHello(helloworld_pb2.HelloRequest(name='you child'))
     print("Greeter client received: " + response.message)
 
 def run():
-    channel = grpc.insecure_channel('localhost:50051')
+    def subp():
+      channel = grpc.insecure_channel('localhost:50051')
+    subp()
+    import gc
+    gc.collect()
+    time.sleep(50)
     def cb(some_arg):
       print('invoked with ', some_arg)
-    channel.subscribe(cb)
+    print('subscribing')
+    #channel.subscribe(cb)
 #    channel.unsubscribe(cb)
     def unsub():
       time.sleep(3)
       channel.unsubscribe(cb)
       print('unsubbed!')
-    t = threading.Thread(target=unsub)
-    t.start()
-    stub = helloworld_pb2_grpc.GreeterStub(channel)
-    response = stub.SayHello(helloworld_pb2.HelloRequest(name='you'))
-    print("Greeter client received: " + response.message)
+    #t = threading.Thread(target=unsub)
+    #t.start()
+    #stub = helloworld_pb2_grpc.GreeterStub(channel)
+    #response = stub.SayHello(helloworld_pb2.HelloRequest(name='you'))
+    #print("Greeter client received: " + response.message)
     process = multiprocessing.Process(target=doRpc)
     process.start()
 
