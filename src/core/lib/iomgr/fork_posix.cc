@@ -59,12 +59,12 @@ void grpc_prefork() {
             "environment variable GRPC_ENABLE_FORK_SUPPORT=1");
     return;
   }
-  if (!grpc_core::Fork::BlockExecCtx()) {
-    gpr_log(GPR_ERROR,
-            "Other threads are currently calling into gRPC, skipping fork() "
-            "handlers");
-    return;
-  }
+//  if (!grpc_core::Fork::BlockExecCtx()) {
+//    gpr_log(GPR_ERROR,
+//            "Other threads are currently calling into gRPC, skipping fork() "
+//            "handlers");
+//    return;
+//  }
   grpc_timer_manager_set_threading(false);
   grpc_executor_set_threading(false);
   grpc_core::ExecCtx::Get()->Flush();
