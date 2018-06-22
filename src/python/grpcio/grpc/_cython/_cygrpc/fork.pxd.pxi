@@ -19,4 +19,5 @@ cdef extern from "pthread.h" nogil:
     void (*child)() nogil)
 
 cdef void __prefork() nogil
+cdef void __postfork() nogil
 

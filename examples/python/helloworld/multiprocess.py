@@ -39,7 +39,7 @@ def run():
     channel.subscribe(cb)
 #    channel.unsubscribe(cb)
     def unsub():
-      time.sleep(2)
+      time.sleep(3)
       channel.unsubscribe(cb)
       print('unsubbed!')
     t = threading.Thread(target=unsub)
@@ -47,7 +47,6 @@ def run():
     stub = helloworld_pb2_grpc.GreeterStub(channel)
     response = stub.SayHello(helloworld_pb2.HelloRequest(name='you'))
     print("Greeter client received: " + response.message)
-    time.sleep(2)
     process = multiprocessing.Process(target=doRpc)
     process.start()
     print('waiting for child')

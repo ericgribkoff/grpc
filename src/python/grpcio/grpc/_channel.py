@@ -816,13 +816,22 @@ def _poll_connectivity(state, channel, initial_try_to_connect):
         if callbacks:
             _spawn_delivery(state, callbacks)
     while True:
+
         event = channel.watch_connectivity_state(connectivity,
                                                  time.time() + 0.2)
         print('in _poll_connectivity')
+        with cygrpc.thread_count.forking_lock:
+          unsubscribe_due_to_fork = cygrpc.thread_count.forking
+        print('unsub due to fork', unsubscribe_due_to_fork)
         with state.lock:
+            # TODO - pause and resume in child instead of unsubbing
+            if unsubscribe_due_to_fork:
+              state.callbacks_and_connectivities = []
+              state.try_to_connect = False
             if not state.callbacks_and_connectivities and not state.try_to_connect:
                 state.polling = False
                 state.connectivity = None
+                print('break')
                 break
             try_to_connect = state.try_to_connect
             state.try_to_connect = False

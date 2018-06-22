@@ -19,32 +19,30 @@ import traceback
 
 cdef void __prefork() nogil:
   with gil:
-#    def waitAndUnlock():
-#      time.sleep(3)
-#      print('waking up and finishing!')
-#      thread_barrier.decrement_threads()
-#    t = threading.Thread(target=waitAndUnlock)
-#    thread_barrier.increment_threads()
-#    t.start()
-#    print('num_threads went to 0')
+    with thread_count.forking_lock:
+      thread_count.forking = True
     traceback.print_stack()
-    print('invoked?')
     print('awaiting tb.num_threads=0')
     print('tb.num_threads=0? ', thread_count.await_zero_threads(5))
+
+cdef void __postfork() nogil:
+  with gil:
+    with thread_count.forking_lock:
+      thread_count.forking = False
 
 fork_handler_lock = threading.Lock()
 fork_handlers_registered = False
 
 def fork_handlers_and_grpc_init():
-  grpc_init()
   global fork_handler_lock
   global fork_handlers_registered
-  fork_handler_lock.acquire()
-  if not fork_handlers_registered:
-    print('Installing fork handler', pthread_atfork(&__prefork,
-         NULL, NULL))
-    fork_handlers_registered = True
-  fork_handler_lock.release()
+  grpc_init()
+  with fork_handler_lock:
+    if not fork_handlers_registered:
+      print('Installing fork handler after grpc_init',
+        pthread_atfork(&__prefork,
+        &__postfork, &__postfork))
+      fork_handlers_registered = True
 
 class ThreadCount(object):
   def __init__(self):
@@ -70,10 +68,6 @@ class ThreadCount(object):
     if self.num_threads == 0:
       self.lock.notify_all()
     self.lock.release()
-
-  def set_forking(val):
-    with self.forking_lock:
-      forking = val
 
   def await_zero_threads(self, timeout_secs):
     with self.lock:
