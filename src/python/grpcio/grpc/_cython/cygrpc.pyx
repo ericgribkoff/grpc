@@ -28,7 +28,7 @@ include "_cygrpc/channel.pyx.pxi"
 include "_cygrpc/credentials.pyx.pxi"
 include "_cygrpc/completion_queue.pyx.pxi"
 include "_cygrpc/event.pyx.pxi"
-include "_cygrpc/fork_handler.pyx.pxi"
+include "_cygrpc/fork.pyx.pxi"
 include "_cygrpc/metadata.pyx.pxi"
 include "_cygrpc/operation.pyx.pxi"
 include "_cygrpc/records.pyx.pxi"
@@ -52,7 +52,6 @@ cdef _initialize():
   PyEval_InitThreads()
   grpc_set_ssl_roots_override_callback(
           <grpc_ssl_roots_override_callback>ssl_roots_override_callback)
-  print('Installing fork handler', pthread_atfork(&__prefork, NULL, NULL))
 
 
 _initialize()

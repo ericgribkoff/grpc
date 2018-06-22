@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+#
 import threading
 import time #TODO remove
 import traceback
@@ -26,23 +27,42 @@ cdef void __prefork() nogil:
 #    thread_barrier.increment_threads()
 #    t.start()
 #    print('num_threads went to 0')
-    traceback.print_exc()
+    traceback.print_stack()
     print('invoked?')
     print('awaiting tb.num_threads=0')
-    print(thread_barrier.await_zero_threads(5))
-    print('tb.num_threads=0')
+    print('tb.num_threads=0? ', thread_count.await_zero_threads(5))
 
-class ThreadBarrier(object):
+fork_handler_lock = threading.Lock()
+fork_handlers_registered = False
+
+def fork_handlers_and_grpc_init():
+  grpc_init()
+  global fork_handler_lock
+  global fork_handlers_registered
+  fork_handler_lock.acquire()
+  if not fork_handlers_registered:
+    print('Installing fork handler', pthread_atfork(&__prefork,
+         NULL, NULL))
+    fork_handlers_registered = True
+  fork_handler_lock.release()
+
+class ThreadCount(object):
   def __init__(self):
     self.num_threads = 0
     self.lock = threading.Condition()
+    self.forking = False
+    self.forking_lock = threading.RLock()
 
-  def increment_threads(self):
+  def increment(self):
+    print('incrementing thread count')
+    traceback.print_stack()
     self.lock.acquire()
     self.num_threads += 1
     self.lock.release()
 
-  def decrement_threads(self):
+  def decrement(self):
+    print('decrementing thread count')
+    traceback.print_stack()
     self.lock.acquire()
     if self.num_threads > 0:
       self.num_threads -= 1
@@ -51,10 +71,14 @@ class ThreadBarrier(object):
       self.lock.notify_all()
     self.lock.release()
 
+  def set_forking(val):
+    with self.forking_lock:
+      forking = val
+
   def await_zero_threads(self, timeout_secs):
     with self.lock:
       if self.num_threads > 0:
         self.lock.wait(timeout_secs)
       return self.num_threads == 0
 
-thread_barrier = ThreadBarrier()
+thread_count = ThreadCount()

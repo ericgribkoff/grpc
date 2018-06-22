@@ -176,10 +176,12 @@ def _consume_request_iterator(request_iterator, state, call, request_serializer,
                               event_handler):
 
     def consume_request_iterator():  # pylint: disable=too-many-branches
+        cygrpc.thread_count.increment()
         while True:
             try:
                 request = next(request_iterator)
             except StopIteration:
+                cygrpc.thread_count.decrement()
                 break
             except Exception:  # pylint: disable=broad-except
                 code = grpc.StatusCode.UNKNOWN
@@ -188,6 +190,7 @@ def _consume_request_iterator(request_iterator, state, call, request_serializer,
                 call.cancel(_common.STATUS_CODE_TO_CYGRPC_STATUS_CODE[code],
                             details)
                 _abort(state, code, details)
+                cygrpc.thread_count.decrement()
                 return
             serialized_request = _common.serialize(request, request_serializer)
             with state.condition:
@@ -199,6 +202,7 @@ def _consume_request_iterator(request_iterator, state, call, request_serializer,
                             _common.STATUS_CODE_TO_CYGRPC_STATUS_CODE[code],
                             details)
                         _abort(state, code, details)
+                        cygrpc.thread_count.decrement()
                         return
                     else:
                         operations = (cygrpc.SendMessageOperation(
@@ -207,6 +211,7 @@ def _consume_request_iterator(request_iterator, state, call, request_serializer,
                         if operating:
                             state.due.add(cygrpc.OperationType.send_message)
                         else:
+                            cygrpc.thread_count.decrement()
                             return
                         while True:
                             state.condition.wait()
@@ -214,8 +219,10 @@ def _consume_request_iterator(request_iterator, state, call, request_serializer,
                                 if cygrpc.OperationType.send_message not in state.due:
                                     break
                             else:
+                                cygrpc.thread_count.decrement()
                                 return
                 else:
+                    cygrpc.thread_count.decrement()
                     return
         with state.condition:
             if state.code is None:
@@ -677,6 +684,7 @@ class _ChannelCallState(object):
 def _run_channel_spin_thread(state):
 
     def channel_spin():
+        cygrpc.thread_count.increment()
         while True:
             event = state.channel.next_call_event()
             print(event)
@@ -690,6 +698,7 @@ def _run_channel_spin_thread(state):
                 with state.lock:
                     state.managed_calls -= 1
                     if state.managed_calls == 0:
+                        cygrpc.thread_count.decrement()
                         return
 
     channel_spin_thread = threading.Thread(target=channel_spin)
@@ -761,6 +770,7 @@ def _deliveries(state):
 
 
 def _deliver(state, initial_connectivity, initial_callbacks):
+    cygrpc.thread_count.increment()
     connectivity = initial_connectivity
     callbacks = initial_callbacks
     while True:
@@ -774,6 +784,7 @@ def _deliver(state, initial_connectivity, initial_callbacks):
                 connectivity = state.connectivity
             else:
                 state.delivering = False
+                cygrpc.thread_count.decrement()
                 return
 
 
@@ -790,7 +801,7 @@ def _spawn_delivery(state, callbacks):
 
 # NOTE(https://github.com/grpc/grpc/issues/3064): We'd rather not poll.
 def _poll_connectivity(state, channel, initial_try_to_connect):
-    cygrpc.thread_barrier.increment_threads()
+    cygrpc.thread_count.increment()
     try_to_connect = initial_try_to_connect
     connectivity = channel.check_connectivity_state(try_to_connect)
     with state.lock:
@@ -807,6 +818,7 @@ def _poll_connectivity(state, channel, initial_try_to_connect):
     while True:
         event = channel.watch_connectivity_state(connectivity,
                                                  time.time() + 0.2)
+        print('in _poll_connectivity')
         with state.lock:
             if not state.callbacks_and_connectivities and not state.try_to_connect:
                 state.polling = False
@@ -824,7 +836,7 @@ def _poll_connectivity(state, channel, initial_try_to_connect):
                     callbacks = _deliveries(state)
                     if callbacks:
                         _spawn_delivery(state, callbacks)
-    cygrpc.thread_barrier.decrement_threads()
+    cygrpc.thread_count.decrement()
 
 
 def _moot(state):
