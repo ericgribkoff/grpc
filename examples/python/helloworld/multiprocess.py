@@ -16,12 +16,15 @@
 from __future__ import print_function
 
 import grpc
+import logging
 import multiprocessing
 import threading
 import time
 
 import helloworld_pb2
 import helloworld_pb2_grpc
+
+logging.basicConfig()
 
 def doRpc():
     print('In doRpc()')
@@ -35,6 +38,8 @@ def run():
     #time.sleep(50)
     def cb(some_arg):
       print('invoked with ', some_arg)
+      channel.subscribe(cb)
+      time.sleep(100)
     print('subscribing')
     channel.subscribe(cb)
 #    channel.unsubscribe(cb)

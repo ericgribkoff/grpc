@@ -13,18 +13,22 @@
 # limitations under the License.
 
 
+import logging
 import threading
-import traceback # TODO remove
 
+_LOGGER = logging.getLogger(__name__)
+
+_AWAIT_THREADS_TIMEOUT_SECONDS = 5
 
 cdef void __prefork() nogil:
     with gil:
         with _fork_state.fork_in_progress_lock:
             _fork_state.fork_in_progress = True
-        traceback.print_stack()
-        print('awaiting tb.num_threads=0')
-        # TODO - replace 5 with constant
-        print('tb.num_threads=0? ', _fork_state.thread_count.await_zero_threads(5))
+        if not _fork_state.thread_count.await_zero_threads(
+                _AWAIT_THREADS_TIMEOUT_SECONDS):
+            _LOGGER.exception(
+                'Failed to shutdown gRPC Python threads prior to fork. '
+                'Behavior after fork is undefined.')
 
 
 cdef void __postfork() nogil:
@@ -37,9 +41,7 @@ def fork_handlers_and_grpc_init():
     grpc_init()
     with _fork_state.fork_handler_registered_lock:
         if not _fork_state.fork_handler_registered:
-            print('Installing fork handler after grpc_init',
-                pthread_atfork(&__prefork,
-                &__postfork, &__postfork))
+            pthread_atfork(&__prefork, &__postfork, &__postfork)
             _fork_state.fork_handler_registered = True
 
 
@@ -62,14 +64,10 @@ class _ThreadCount(object):
         self._condition = threading.Condition()
 
     def increment(self):
-        print('incrementing thread count')
-        traceback.print_stack()
         with self._condition:
             self._num_threads += 1
 
     def decrement(self):
-        print('decrementing thread count')
-        traceback.print_stack()
         with self._condition:
             self._num_threads -= 1
             if self._num_threads == 0:
