@@ -14,52 +14,47 @@
 
 
 import threading
-import traceback
+import traceback # TODO remove
+
 
 cdef void __prefork() nogil:
     with gil:
-        global _fork_in_progress_lock
-        global _fork_in_progress
-        with _fork_in_progress_lock:
-            _fork_in_progress = True
+        with _fork_state.fork_in_progress_lock:
+            _fork_state.fork_in_progress = True
         traceback.print_stack()
         print('awaiting tb.num_threads=0')
-        print('tb.num_threads=0? ', _thread_count.await_zero_threads(5))
+        # TODO - replace 5 with constant
+        print('tb.num_threads=0? ', _fork_state.thread_count.await_zero_threads(5))
+
 
 cdef void __postfork() nogil:
     with gil:
-        global _fork_in_progress_lock
-        global _fork_in_progress
-        with _fork_in_progress_lock:
-            _fork_in_progress = False
+        with _fork_state.fork_in_progress_lock:
+            _fork_state.fork_in_progress = False
 
-_fork_handler_lock = threading.Lock()
-_fork_handler_registered = False
 
 def fork_handlers_and_grpc_init():
-    global _fork_handler_lock
-    global _fork_handler_registered
     grpc_init()
-    with _fork_handler_lock:
-        if not _fork_handler_registered:
+    with _fork_state.fork_handler_registered_lock:
+        if not _fork_state.fork_handler_registered:
             print('Installing fork handler after grpc_init',
                 pthread_atfork(&__prefork,
                 &__postfork, &__postfork))
-            _fork_handler_registered = True
+            _fork_state.fork_handler_registered = True
+
 
 def fork_managed_thread(target, args=()):
     def managed_target(*args):
-        _thread_count.increment()
+        _fork_state.thread_count.increment()
         target(*args)
-        _thread_count.decrement()
+        _fork_state.thread_count.decrement()
     return threading.Thread(target=managed_target, args=args)
 
-_fork_in_progress_lock = threading.Lock()
-_fork_in_progress = False
 
 def is_fork_in_progress():
-    with _fork_in_progress_lock:
-        return _fork_in_progress
+    with _fork_state.fork_in_progress_lock:
+        return _fork_state.fork_in_progress
+
 
 class _ThreadCount(object):
     def __init__(self):
@@ -86,4 +81,14 @@ class _ThreadCount(object):
                 self._condition.wait(timeout_secs)
             return self._num_threads == 0
 
-_thread_count = _ThreadCount()
+
+class _ForkState(object):
+    def __init__(self):
+        self.fork_in_progress_lock = threading.Lock()
+        self.fork_in_progress = False
+        self.fork_handler_registered_lock = threading.Lock()
+        self.fork_handler_registered = False
+        self.thread_count = _ThreadCount()
+
+
+_fork_state = _ForkState()

@@ -47,6 +47,7 @@ def run():
     stub = helloworld_pb2_grpc.GreeterStub(channel)
     response = stub.SayHello(helloworld_pb2.HelloRequest(name='you'))
     print("Greeter client received: " + response.message)
+    time.sleep(1)
     process = multiprocessing.Process(target=doRpc)
     process.start()
     print('waiting for child')
