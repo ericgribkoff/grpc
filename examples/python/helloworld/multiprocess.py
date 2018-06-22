@@ -38,8 +38,7 @@ def run():
     #time.sleep(50)
     def cb(some_arg):
       print('invoked with ', some_arg)
-      channel.subscribe(cb)
-      time.sleep(100)
+      #time.sleep(100)
     print('subscribing')
     channel.subscribe(cb)
 #    channel.unsubscribe(cb)

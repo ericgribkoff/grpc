@@ -14,11 +14,15 @@
 
 
 import logging
+import os
 import threading
 
 _LOGGER = logging.getLogger(__name__)
 
 _AWAIT_THREADS_TIMEOUT_SECONDS = 5
+
+_EXPERIMENTAL_FORK_SUPPORT_ENABLED = (
+    bool(os.environ.get('GRPC_PYTHON_EXPERIMENTAL_FORK_SUPPORT', False)))
 
 cdef void __prefork() nogil:
     with gil:
@@ -28,7 +32,7 @@ cdef void __prefork() nogil:
                 _AWAIT_THREADS_TIMEOUT_SECONDS):
             _LOGGER.exception(
                 'Failed to shutdown gRPC Python threads prior to fork. '
-                'Behavior after fork is undefined.')
+                'Behavior after fork will be undefined.')
 
 
 cdef void __postfork() nogil:
@@ -39,18 +43,22 @@ cdef void __postfork() nogil:
 
 def fork_handlers_and_grpc_init():
     grpc_init()
-    with _fork_state.fork_handler_registered_lock:
-        if not _fork_state.fork_handler_registered:
-            pthread_atfork(&__prefork, &__postfork, &__postfork)
-            _fork_state.fork_handler_registered = True
+    if _EXPERIMENTAL_FORK_SUPPORT_ENABLED:
+        with _fork_state.fork_handler_registered_lock:
+            if not _fork_state.fork_handler_registered:
+                pthread_atfork(&__prefork, &__postfork, &__postfork)
+                _fork_state.fork_handler_registered = True
 
 
 def fork_managed_thread(target, args=()):
-    def managed_target(*args):
-        _fork_state.thread_count.increment()
-        target(*args)
-        _fork_state.thread_count.decrement()
-    return threading.Thread(target=managed_target, args=args)
+    if _EXPERIMENTAL_FORK_SUPPORT_ENABLED:
+        def managed_target(*args):
+            _fork_state.thread_count.increment()
+            target(*args)
+            _fork_state.thread_count.decrement()
+        return threading.Thread(target=managed_target, args=args)
+    else:
+        return threading.Thread(target=target, args=args)
 
 
 def is_fork_in_progress():
