@@ -21,11 +21,7 @@ from libc.stdint cimport uintptr_t
 
 
 def _spawn_callback_in_thread(cb_func, args):
-  def thread_counter_cb(args):
-    thread_count.increment()
-    cb_func(args)
-    thread_count.decrement()
-  threading.Thread(target=cb_func, args=args).start()
+  fork_managed_thread(target=cb_func, args=args).start()
 
 async_callback_func = _spawn_callback_in_thread
 
