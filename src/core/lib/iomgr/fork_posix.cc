@@ -27,11 +27,13 @@
 #include <grpc/fork.h>
 #include <grpc/support/log.h>
 
+#include "src/core/ext//filters/client_channel/subchannel_index.h"
 #include "src/core/lib/gpr/env.h"
 #include "src/core/lib/gprpp/fork.h"
 #include "src/core/lib/gprpp/thd.h"
 #include "src/core/lib/iomgr/ev_posix.h"
 #include "src/core/lib/iomgr/executor.h"
+#include "src/core/lib/iomgr/timer.h"
 #include "src/core/lib/iomgr/timer_manager.h"
 #include "src/core/lib/iomgr/wakeup_fd_posix.h"
 #include "src/core/lib/surface/init.h"
@@ -82,8 +84,12 @@ void grpc_postfork_parent() {
 
 void grpc_postfork_child() {
   if (!skipped_handler) {
+    grpc_core::Fork::IncrementForkEpoch();
     grpc_core::Fork::AllowExecCtx();
     grpc_core::ExecCtx exec_ctx;
+    grpc_subchannel_index_disconnect_on_fork();
+    grpc_event_engine_shutdown();
+    grpc_event_engine_init();
     grpc_timer_manager_set_threading(true);
     grpc_executor_set_threading(true);
   }

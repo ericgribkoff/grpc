@@ -45,6 +45,7 @@
 #include "src/core/lib/gpr/spinlock.h"
 #include "src/core/lib/gpr/tls.h"
 #include "src/core/lib/gpr/useful.h"
+#include "src/core/lib/gprpp/fork.h"
 #include "src/core/lib/gprpp/manual_constructor.h"
 #include "src/core/lib/iomgr/block_annotate.h"
 #include "src/core/lib/iomgr/iomgr_internal.h"
@@ -102,6 +103,7 @@ struct pollable {
   gpr_refcount refs;
 
   int epfd;
+  int fork_epoch;
   grpc_wakeup_fd wakeup;
 
   // The following are relevant only for type PO_FD
@@ -228,6 +230,8 @@ struct grpc_fd {
 
   // Do we need to track EPOLLERR events separately?
   bool track_err;
+
+  int fork_epoch;
 };
 
 static void fd_global_init(void);
@@ -267,6 +271,7 @@ struct grpc_pollset {
   bool already_shutdown;
   grpc_pollset_worker* root_worker;
   int containing_pollset_set_count;
+  int fork_epoch;
 };
 
 /*******************************************************************************
@@ -447,6 +452,8 @@ static grpc_fd* fd_create(int fd, const char* name, bool track_err) {
   new_fd->on_done_closure = nullptr;
   gpr_atm_no_barrier_store(&new_fd->read_notifier_pollset, (gpr_atm)NULL);
 
+  new_fd->fork_epoch = grpc_core::Fork::GetForkEpoch();
+
   char* fd_name;
   gpr_asprintf(&fd_name, "%s fd=%d", name, fd);
   grpc_iomgr_register_object(&new_fd->iomgr_object, fd_name);
@@ -525,10 +532,14 @@ static bool fd_is_shutdown(grpc_fd* fd) {
 /* Might be called multiple times */
 static void fd_shutdown(grpc_fd* fd, grpc_error* why) {
   if (fd->read_closure->SetShutdown(GRPC_ERROR_REF(why))) {
-    if (shutdown(fd->fd, SHUT_RDWR)) {
-      if (errno != ENOTCONN) {
-        gpr_log(GPR_ERROR, "Error shutting down fd %d. errno: %d",
-                grpc_fd_wrapped_fd(fd), errno);
+    if (fd->fork_epoch < grpc_core::Fork::GetForkEpoch()) {
+      close(fd->fd);
+    } else {
+      if (shutdown(fd->fd, SHUT_RDWR)) {
+        if (errno != ENOTCONN) {
+          gpr_log(GPR_ERROR, "Error shutting down fd %d. errno: %d",
+                  grpc_fd_wrapped_fd(fd), errno);
+        }
       }
     }
     fd->write_closure->SetShutdown(GRPC_ERROR_REF(why));
@@ -591,6 +602,7 @@ static grpc_error* pollable_create(pollable_type type, pollable** p) {
   gpr_ref_init(&(*p)->refs, 1);
   gpr_mu_init(&(*p)->mu);
   (*p)->epfd = epfd;
+  (*p)->fork_epoch = grpc_core::Fork::GetForkEpoch();
   (*p)->owner_fd = nullptr;
   gpr_mu_init(&(*p)->owner_orphan_mu);
   (*p)->owner_orphaned = false;
@@ -641,8 +653,36 @@ static void pollable_unref(pollable* p, int line, const char* reason) {
 static grpc_error* pollable_add_fd(pollable* p, grpc_fd* fd) {
   grpc_error* error = GRPC_ERROR_NONE;
   static const char* err_desc = "pollable_add_fd";
-  const int epfd = p->epfd;
+
   gpr_mu_lock(&p->mu);
+  if (p->fork_epoch < grpc_core::Fork::GetForkEpoch()) {
+    // TODO: are epfd (and fork_epoch) safely guarded by mu?
+    close(p->epfd);
+    grpc_wakeup_fd_destroy(&(p->wakeup));
+    // TODO: error handling, logging
+    p->epfd = epoll_create1(EPOLL_CLOEXEC);
+    grpc_error* err = grpc_wakeup_fd_init(&(p->wakeup));
+    if (err != GRPC_ERROR_NONE) {
+      // TODO: error handling
+      gpr_log(GPR_INFO, "error creating wakeup fd");
+    }
+    struct epoll_event ev;
+    ev.events = static_cast<uint32_t>(EPOLLIN | EPOLLET);
+    ev.data.ptr = (void*)(1 | (intptr_t) & p->wakeup);
+    epoll_ctl(p->epfd, EPOLL_CTL_ADD, p->wakeup.read_fd, &ev);
+    p->fork_epoch = grpc_core::Fork::GetForkEpoch();
+    p->fd_cache_counter = 0;
+    for (int i = 0; i < p->fd_cache_size; i++) {
+      p->fd_cache[i].fd = -1;
+    }
+  }
+
+  if (fd->fork_epoch < grpc_core::Fork::GetForkEpoch()) {
+    gpr_mu_unlock(&p->mu);
+    return GRPC_ERROR_NONE;
+  }
+
+  const int epfd = p->epfd;
   p->fd_cache_counter++;
 
   // Handle the case of overflow for our cache counter by
@@ -689,6 +729,7 @@ static grpc_error* pollable_add_fd(pollable* p, grpc_fd* fd) {
   ev_fd.data.ptr = reinterpret_cast<void*>(reinterpret_cast<intptr_t>(fd) |
                                            (fd->track_err ? 2 : 0));
   GRPC_STATS_INC_SYSCALL_EPOLL_CTL();
+
   if (epoll_ctl(epfd, EPOLL_CTL_ADD, fd->fd, &ev_fd) != 0) {
     switch (errno) {
       case EEXIST:
@@ -860,6 +901,7 @@ static void pollset_init(grpc_pollset* pollset, gpr_mu** mu) {
   pollset->already_shutdown = false;
   pollset->root_worker = nullptr;
   pollset->containing_pollset_set_count = 0;
+  pollset->fork_epoch = grpc_core::Fork::GetForkEpoch();
   *mu = &pollset->mu;
 }
 
@@ -1008,6 +1050,11 @@ static grpc_error* pollable_epoll(pollable* p, grpc_millis deadline) {
     char* desc = pollable_desc(p);
     gpr_log(GPR_INFO, "POLLABLE:%p[%s] poll for %dms", p, desc, timeout);
     gpr_free(desc);
+  }
+
+  if (p->fork_epoch < grpc_core::Fork::GetForkEpoch()) {
+    // TODO: is this correct for P0?
+    return GRPC_ERROR_NONE;
   }
 
   if (timeout != 0) {
@@ -1194,6 +1241,7 @@ static grpc_error* pollset_work(grpc_pollset* pollset,
             pollset, worker_hdl, WORKER_PTR, grpc_core::ExecCtx::Get()->Now(),
             deadline, pollset->kicked_without_poller, pollset->active_pollable);
   }
+
   static const char* err_desc = "pollset_work";
   grpc_error* error = GRPC_ERROR_NONE;
   if (pollset->kicked_without_poller) {

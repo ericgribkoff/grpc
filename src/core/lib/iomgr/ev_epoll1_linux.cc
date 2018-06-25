@@ -145,6 +145,8 @@ struct grpc_fd {
   gpr_atm read_notifier_pollset;
 
   grpc_iomgr_object iomgr_object;
+
+  int fork_epoch;
 };
 
 static void fd_global_init(void);
@@ -290,6 +292,7 @@ static grpc_fd* fd_create(int fd, const char* name, bool track_err) {
     new_fd->error_closure.Init();
   }
   new_fd->fd = fd;
+  new_fd->fork_epoch = grpc_core::Fork::GetForkEpoch();
   new_fd->read_closure->InitEvent();
   new_fd->write_closure->InitEvent();
   new_fd->error_closure->InitEvent();
@@ -332,7 +335,11 @@ static void fd_shutdown_internal(grpc_fd* fd, grpc_error* why,
                                  bool releasing_fd) {
   if (fd->read_closure->SetShutdown(GRPC_ERROR_REF(why))) {
     if (!releasing_fd) {
-      shutdown(fd->fd, SHUT_RDWR);
+      if (fd->fork_epoch < grpc_core::Fork::GetForkEpoch()) {
+        close(fd->fd);
+      } else {
+        shutdown(fd->fd, SHUT_RDWR);
+      }
     }
     fd->write_closure->SetShutdown(GRPC_ERROR_REF(why));
     fd->error_closure->SetShutdown(GRPC_ERROR_REF(why));

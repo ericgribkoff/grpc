@@ -22,6 +22,8 @@
 
 #ifdef GRPC_POSIX_WAKEUP_FD
 
+#include <grpc/support/log.h>
+
 #include <stddef.h>
 #include "src/core/lib/iomgr/wakeup_fd_cv.h"
 #include "src/core/lib/iomgr/wakeup_fd_pipe.h"
@@ -70,6 +72,7 @@ grpc_error* grpc_wakeup_fd_consume_wakeup(grpc_wakeup_fd* fd_info) {
 }
 
 grpc_error* grpc_wakeup_fd_wakeup(grpc_wakeup_fd* fd_info) {
+  // TODO: check fork epoch?
   if (cv_wakeup_fds_enabled) {
     return grpc_cv_wakeup_fd_vtable.wakeup(fd_info);
   }
