@@ -69,6 +69,7 @@ void grpc_prefork() {
   grpc_core::ExecCtx::Get()->Flush();
   grpc_core::Fork::AwaitThreads();
   skipped_handler = false;
+  gpr_log(GPR_ERROR, "Ran prefork handler");
 }
 
 void grpc_postfork_parent() {
@@ -90,8 +91,11 @@ void grpc_postfork_child() {
 }
 
 void grpc_fork_handlers_auto_register() {
+  gpr_log(GPR_ERROR, "maybe install handlers?");
   if (grpc_core::Fork::Enabled() & !registered_handlers) {
+    gpr_log(GPR_ERROR, "fork enabled");
 #ifdef GRPC_POSIX_FORK_ALLOW_PTHREAD_ATFORK
+    gpr_log(GPR_ERROR, "registering fork handlers");
     pthread_atfork(grpc_prefork, grpc_postfork_parent, grpc_postfork_child);
     registered_handlers = true;
 #endif  // GRPC_POSIX_FORK_ALLOW_PTHREAD_ATFORK

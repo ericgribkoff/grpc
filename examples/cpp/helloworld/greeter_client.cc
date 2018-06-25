@@ -147,13 +147,13 @@ int main(int argc, char** argv) {
   //channel->EnterLame();
   //std::string reply2 = greeter->SayHello("second time");
   //std::cout << "Greeter received: " << reply2 << std::endl;
-  std::thread streamer([greeter]() {
-    greeter->StreamingHello();
-  });
-  std::this_thread::sleep_for(std::chrono::seconds(1));
-  channel->EnterLame();
-  streamer.join();
-  exit(1);
+//  std::thread streamer([greeter]() {
+//    greeter->StreamingHello();
+//  });
+//  std::this_thread::sleep_for(std::chrono::seconds(1));
+//  channel->EnterLame();
+//  streamer.join();
+//  exit(1);
 ////  std::cout << "Done sleeping" << std::endl;
 ////  std::string reply2 = greeter->SayHello("parent");
 ////  std::cout << "Received: " << reply2 << std::endl;
@@ -169,23 +169,23 @@ int main(int argc, char** argv) {
   std::cout << "Original process ID: " << ::getpid() << std::endl;
   if (fork() != 0) {
     std::cout << "Parent process ID: " << ::getpid() << std::endl;
-    //greeter->SayHello("parent");
+    greeter->SayHello("parent");
     //doRpc("parent");
-    streamer.join();
-    std::cout << "(" << ::getpid() << ") Streamer thread is done" << std::endl;
+//    streamer.join();
+//    std::cout << "(" << ::getpid() << ") Streamer thread is done" << std::endl;
 
     int status;
     pid_t pid = wait(&status);
     std::cout << "(" << ::getpid() << ") Child process is done" << std::endl;
   } else {
     std::cout << "Child process ID: " << ::getpid() << std::endl;
-    channel->EnterLame();
+//    channel->EnterLame();
     //std::cout << "Forked: " << greeter->SayHello("blah") << std::endl;
     //gpr_setenv("GRPC_VERBOSITY", "DEBUG");
     //gpr_setenv("GRPC_TRACE", "all");
     //doRpcAndWait("child");
     doRpc("child");
-    streamer.detach();
+//    streamer.detach();
   }
 
 //  std::cout << "Forked: " << greeter.SayHello("blah") << std::endl;

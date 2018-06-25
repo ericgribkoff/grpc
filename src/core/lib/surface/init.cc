@@ -120,6 +120,7 @@ void grpc_init(void) {
 
   gpr_mu_lock(&g_init_mu);
   if (++g_initializations == 1) {
+    gpr_log(GPR_ERROR, "about to start init of fork handlers");
     grpc_core::Fork::GlobalInit();
     grpc_fork_handlers_auto_register();
     gpr_time_init();
