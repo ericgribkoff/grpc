@@ -172,3 +172,9 @@ void grpc_client_channel_stop_backup_polling(
   grpc_pollset_set_del_pollset(interested_parties, g_poller->pollset);
   g_poller_unref();
 }
+
+void grpc_backup_poller_reset_for_fork() {
+  gpr_mu_lock(&g_poller_mu);
+  g_poller = nullptr;
+  gpr_mu_unlock(&g_poller_mu);
+}

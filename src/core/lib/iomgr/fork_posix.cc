@@ -27,6 +27,8 @@
 #include <grpc/fork.h>
 #include <grpc/support/log.h>
 
+#include "src/core/ext//filters/client_channel/backup_poller.h"
+#include "src/core/ext//filters/client_channel/subchannel_index.h"
 #include "src/core/lib/gpr/env.h"
 #include "src/core/lib/gprpp/fork.h"
 #include "src/core/lib/gprpp/thd.h"
@@ -86,8 +88,9 @@ void grpc_postfork_child() {
   if (!skipped_handler) {
     grpc_core::Fork::AllowExecCtx();
     grpc_core::ExecCtx exec_ctx;
-    grpc_timer_list_shutdown_post_fork();
     grpc_timer_list_init();
+    grpc_backup_poller_reset_for_fork();
+    grpc_subchannel_index_init();
     grpc_timer_manager_set_threading(true);
     grpc_executor_set_threading(true);
   }

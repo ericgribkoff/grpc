@@ -56,7 +56,6 @@ typedef struct grpc_timer_vtable {
   grpc_timer_check_result (*check)(grpc_millis* next);
   void (*list_init)();
   void (*list_shutdown)(void);
-  void (*list_shutdown_post_fork)(void);
   void (*consume_kick)(void);
 } grpc_timer_vtable;
 
@@ -113,7 +112,6 @@ void grpc_timer_cancel(grpc_timer* timer);
 grpc_timer_check_result grpc_timer_check(grpc_millis* next);
 void grpc_timer_list_init();
 void grpc_timer_list_shutdown();
-void grpc_timer_list_shutdown_post_fork();
 
 /* Consume a kick issued by grpc_kick_poller */
 void grpc_timer_consume_kick(void);

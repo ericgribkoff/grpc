@@ -42,6 +42,4 @@ void grpc_timer_list_init() { grpc_timer_impl->list_init(); }
 
 void grpc_timer_list_shutdown() { grpc_timer_impl->list_shutdown(); }
 
-void grpc_timer_list_shutdown_post_fork() { grpc_timer_impl->list_shutdown_post_fork(); }
-
 void grpc_timer_consume_kick() { grpc_timer_impl->consume_kick(); }

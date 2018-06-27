@@ -80,14 +80,14 @@ class GreeterClient {
     std::shared_ptr<grpc::ClientReaderWriter<HelloRequest, HelloReply> > stream(
         stub_->SayHelloStreaming(&context));
 
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < 100; i++) {
       HelloRequest request;
       request.set_name(std::to_string(i));
       if (!stream->Write(request)) {
         break;
       }
-      std::cout << "Sleeping for 60 seconds" << std::endl;
-      std::this_thread::sleep_for(std::chrono::seconds(60));
+      // std::cout << "Sleeping for 60 seconds" << std::endl;
+      std::this_thread::sleep_for(std::chrono::seconds(1));
       HelloReply reply;
       if (!stream->Read(&reply)) {
         break;
@@ -116,7 +116,7 @@ class GreeterClient {
 
 void doRpc(std::string str) {
   GreeterClient greeter(grpc::CreateChannel(
-      "localhost:50053", grpc::InsecureChannelCredentials()));
+      "localhost:50051", grpc::InsecureChannelCredentials()));
   std::cout << "doRpc: Channel created" << std::endl;
   std::string user(str);
   std::string reply = greeter.SayHello(user);
@@ -166,7 +166,8 @@ int main(int argc, char** argv) {
    std::thread streamer([greeter]() {
      greeter->StreamingHello();
    });
-   std::this_thread::sleep_for(std::chrono::seconds(3));
+
+   // std::this_thread::sleep_for(std::chrono::seconds(3));
 //  channel->EnterLame();
 //  streamer.join();
 //  exit(1);
@@ -185,7 +186,7 @@ int main(int argc, char** argv) {
   std::cout << "Original process ID: " << ::getpid() << std::endl;
   if (fork() != 0) {
     std::cout << "Parent process ID: " << ::getpid() << std::endl;
-    // std::this_thread::sleep_for(std::chrono::seconds(2));
+    std::this_thread::sleep_for(std::chrono::seconds(2));
     std::string parent_reply = greeter->SayHello("parent");
     std::cout << "Parent received: " << parent_reply << std::endl;
     //doRpc("parent");
@@ -197,6 +198,12 @@ int main(int argc, char** argv) {
     std::cout << "(" << ::getpid() << ") Child process is done" << std::endl;
   } else {
     std::cout << "Child process ID: " << ::getpid() << std::endl;
+
+    std::shared_ptr<Channel> child_channel = grpc::CreateChannel(
+      "localhost:50051", grpc::InsecureChannelCredentials());
+    GreeterClient *child_greeter = new GreeterClient(child_channel);
+    std::string child_reply = child_greeter->SayHello("parent");
+    std::cout << "Child received: " << child_reply << std::endl;
 //    channel->EnterLame();
     //std::cout << "Forked: " << greeter->SayHello("blah") << std::endl;
     //gpr_setenv("GRPC_VERBOSITY", "DEBUG");
@@ -204,9 +211,9 @@ int main(int argc, char** argv) {
     //doRpcAndWait("child");
 
     // std::this_thread::sleep_for(std::chrono::seconds(2));
-    // doRpc("child");
-    std::this_thread::sleep_for(std::chrono::seconds(100));
-    // doRpc("child again");
+    doRpc("child");
+    std::this_thread::sleep_for(std::chrono::seconds(3));
+    doRpc("child again");
     streamer.detach();
   }
 
