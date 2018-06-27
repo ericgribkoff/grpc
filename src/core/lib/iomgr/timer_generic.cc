@@ -317,9 +317,6 @@ static void timer_list_shutdown() {
 
 // TODO: just make run_expired based on a flag
 static void timer_list_shutdown_post_fork() {
-  run_some_expired_timers(
-      GPR_ATM_MAX, nullptr,
-      GRPC_ERROR_CREATE_FROM_STATIC_STRING("Timer list shutdown"));
   timer_list_shutdown_internal();
 }
 
