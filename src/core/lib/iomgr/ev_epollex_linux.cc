@@ -633,6 +633,7 @@ static grpc_error* pollable_add_fd(pollable* p, grpc_fd* fd) {
 
   if (grpc_polling_trace.enabled()) {
     gpr_log(GPR_INFO, "add fd %p (%d) to pollable %p", fd, fd->fd, p);
+    gpr_log(GPR_INFO, "p: %s", pollable_desc(p));
   }
 
   struct epoll_event ev_fd;

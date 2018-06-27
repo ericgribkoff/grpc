@@ -433,23 +433,29 @@ static void on_alarm(void* arg, grpc_error* error) {
 }
 
 static void maybe_start_connecting_locked(grpc_subchannel* c) {
+  gpr_log(GPR_DEBUG, "maybe_start_connecting_locked");
   if (c->disconnected) {
     /* Don't try to connect if we're already disconnected */
+    gpr_log(GPR_DEBUG, "already disconnected");
     return;
   }
 
   if (c->connecting) {
     /* Already connecting: don't restart */
+    gpr_log(GPR_DEBUG, "already connecting");
     return;
   }
 
   if (c->connected_subchannel != nullptr) {
     /* Already connected: don't restart */
+    gpr_log(GPR_DEBUG, "already connected");
     return;
   }
 
   if (!grpc_connectivity_state_has_watchers(&c->state_tracker)) {
     /* Nobody is interested in connecting: so don't just yet */
+    gpr_log(GPR_DEBUG, "no watchers");
+
     return;
   }
 

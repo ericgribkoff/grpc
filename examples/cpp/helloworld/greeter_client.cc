@@ -114,7 +114,7 @@ class GreeterClient {
 
 void doRpc(std::string str) {
   GreeterClient greeter(grpc::CreateChannel(
-      "localhost:50051", grpc::InsecureChannelCredentials()));
+      "localhost:50053", grpc::InsecureChannelCredentials()));
   std::cout << "doRpc: Channel created" << std::endl;
   std::string user(str);
   std::string reply = greeter.SayHello(user);
@@ -169,7 +169,9 @@ int main(int argc, char** argv) {
   std::cout << "Original process ID: " << ::getpid() << std::endl;
   if (fork() != 0) {
     std::cout << "Parent process ID: " << ::getpid() << std::endl;
-    greeter->SayHello("parent");
+    std::this_thread::sleep_for(std::chrono::seconds(2));
+    std::string parent_reply = greeter->SayHello("parent");
+    std::cout << "Parent received: " << parent_reply << std::endl;
     //doRpc("parent");
 //    streamer.join();
 //    std::cout << "(" << ::getpid() << ") Streamer thread is done" << std::endl;
@@ -184,7 +186,11 @@ int main(int argc, char** argv) {
     //gpr_setenv("GRPC_VERBOSITY", "DEBUG");
     //gpr_setenv("GRPC_TRACE", "all");
     //doRpcAndWait("child");
+
+    // std::this_thread::sleep_for(std::chrono::seconds(2));
     doRpc("child");
+    std::this_thread::sleep_for(std::chrono::seconds(3));
+    doRpc("child again");
 //    streamer.detach();
   }
 
