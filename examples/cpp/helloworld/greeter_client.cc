@@ -86,6 +86,8 @@ class GreeterClient {
       if (!stream->Write(request)) {
         break;
       }
+      std::cout << "Sleeping for 60 seconds" << std::endl;
+      std::this_thread::sleep_for(std::chrono::seconds(60));
       HelloReply reply;
       if (!stream->Read(&reply)) {
         break;
@@ -136,9 +138,19 @@ int main(int argc, char** argv) {
   // are created. This channel models a connection to an endpoint (in this case,
   // localhost at port 50051). We indicate that the channel isn't authenticated
   // (use of InsecureChannelCredentials()).
-  //grpc_init();
-  std::shared_ptr<Channel> channel = grpc::CreateChannel(
-      "localhost:50051", grpc::InsecureChannelCredentials());
+
+  // std::shared_ptr<Channel> channel = grpc::CreateChannel(
+  //     "localhost:50051", grpc::InsecureChannelCredentials());
+
+  grpc::ChannelArguments chan_args;
+  chan_args.SetInt(GRPC_ARG_KEEPALIVE_TIME_MS, 10000);
+  chan_args.SetInt(GRPC_ARG_KEEPALIVE_TIMEOUT_MS, 10000);
+  chan_args.SetInt(GRPC_ARG_HTTP2_MIN_SENT_PING_INTERVAL_WITHOUT_DATA_MS,
+                   10000);
+  chan_args.SetInt(GRPC_ARG_KEEPALIVE_PERMIT_WITHOUT_CALLS, 1);
+  std::shared_ptr<Channel> channel = grpc::CreateCustomChannel(
+      "localhost:50051", grpc::InsecureChannelCredentials(), chan_args);
+  
   GreeterClient *greeter = new GreeterClient(channel);
   std::string user("world2");
   std::string reply = greeter->SayHello(user);
@@ -147,10 +159,10 @@ int main(int argc, char** argv) {
   //channel->EnterLame();
   //std::string reply2 = greeter->SayHello("second time");
   //std::cout << "Greeter received: " << reply2 << std::endl;
-//  std::thread streamer([greeter]() {
-//    greeter->StreamingHello();
-//  });
-//  std::this_thread::sleep_for(std::chrono::seconds(1));
+   std::thread streamer([greeter]() {
+     greeter->StreamingHello();
+   });
+   std::this_thread::sleep_for(std::chrono::seconds(1));
 //  channel->EnterLame();
 //  streamer.join();
 //  exit(1);
@@ -169,12 +181,12 @@ int main(int argc, char** argv) {
   std::cout << "Original process ID: " << ::getpid() << std::endl;
   if (fork() != 0) {
     std::cout << "Parent process ID: " << ::getpid() << std::endl;
-    std::this_thread::sleep_for(std::chrono::seconds(2));
+    // std::this_thread::sleep_for(std::chrono::seconds(2));
     std::string parent_reply = greeter->SayHello("parent");
     std::cout << "Parent received: " << parent_reply << std::endl;
     //doRpc("parent");
-//    streamer.join();
-//    std::cout << "(" << ::getpid() << ") Streamer thread is done" << std::endl;
+   streamer.join();
+   std::cout << "(" << ::getpid() << ") Streamer thread is done" << std::endl;
 
     int status;
     pid_t pid = wait(&status);
@@ -188,10 +200,10 @@ int main(int argc, char** argv) {
     //doRpcAndWait("child");
 
     // std::this_thread::sleep_for(std::chrono::seconds(2));
-    doRpc("child");
-    std::this_thread::sleep_for(std::chrono::seconds(3));
-    doRpc("child again");
-//    streamer.detach();
+    // doRpc("child");
+    std::this_thread::sleep_for(std::chrono::seconds(100));
+    // doRpc("child again");
+    streamer.detach();
   }
 
 //  std::cout << "Forked: " << greeter.SayHello("blah") << std::endl;
