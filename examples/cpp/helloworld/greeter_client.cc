@@ -152,9 +152,13 @@ int main(int argc, char** argv) {
       "localhost:50051", grpc::InsecureChannelCredentials(), chan_args);
   
   GreeterClient *greeter = new GreeterClient(channel);
+  // for (int i = 0; i < 10; i++) {
   std::string user("world2");
   std::string reply = greeter->SayHello(user);
   std::cout << "Greeter received: " << reply << std::endl;
+  //   std::this_thread::sleep_for(std::chrono::seconds(15));
+  // }
+
   //exit(0);
   //channel->EnterLame();
   //std::string reply2 = greeter->SayHello("second time");
@@ -162,7 +166,7 @@ int main(int argc, char** argv) {
    std::thread streamer([greeter]() {
      greeter->StreamingHello();
    });
-   std::this_thread::sleep_for(std::chrono::seconds(1));
+   std::this_thread::sleep_for(std::chrono::seconds(3));
 //  channel->EnterLame();
 //  streamer.join();
 //  exit(1);

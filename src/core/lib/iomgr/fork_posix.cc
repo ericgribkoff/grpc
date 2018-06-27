@@ -32,6 +32,7 @@
 #include "src/core/lib/gprpp/thd.h"
 #include "src/core/lib/iomgr/ev_posix.h"
 #include "src/core/lib/iomgr/executor.h"
+#include "src/core/lib/iomgr/timer.h"
 #include "src/core/lib/iomgr/timer_manager.h"
 #include "src/core/lib/iomgr/wakeup_fd_posix.h"
 #include "src/core/lib/surface/init.h"
@@ -85,6 +86,8 @@ void grpc_postfork_child() {
   if (!skipped_handler) {
     grpc_core::Fork::AllowExecCtx();
     grpc_core::ExecCtx exec_ctx;
+    grpc_timer_list_shutdown_post_fork();
+    grpc_timer_list_init();
     grpc_timer_manager_set_threading(true);
     grpc_executor_set_threading(true);
   }

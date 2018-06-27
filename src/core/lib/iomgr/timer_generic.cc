@@ -288,11 +288,8 @@ static void timer_list_init() {
   INIT_TIMER_HASH_TABLE();
 }
 
-static void timer_list_shutdown() {
+void timer_list_shutdown_internal() {
   size_t i;
-  run_some_expired_timers(
-      GPR_ATM_MAX, nullptr,
-      GRPC_ERROR_CREATE_FROM_STATIC_STRING("Timer list shutdown"));
   for (i = 0; i < g_num_shards; i++) {
     timer_shard* shard = &g_shards[i];
     gpr_mu_destroy(&shard->mu);
@@ -309,6 +306,21 @@ static void timer_list_shutdown() {
   g_shared_mutables.initialized = false;
 
   DESTROY_TIMER_HASH_TABLE();
+}
+
+static void timer_list_shutdown() {
+  run_some_expired_timers(
+      GPR_ATM_MAX, nullptr,
+      GRPC_ERROR_CREATE_FROM_STATIC_STRING("Timer list shutdown"));
+  timer_list_shutdown_internal();
+}
+
+// TODO: just make run_expired based on a flag
+static void timer_list_shutdown_post_fork() {
+  run_some_expired_timers(
+      GPR_ATM_MAX, nullptr,
+      GRPC_ERROR_CREATE_FROM_STATIC_STRING("Timer list shutdown"));
+  timer_list_shutdown_internal();
 }
 
 /* returns true if the first element in the list */
@@ -742,4 +754,5 @@ static grpc_timer_check_result timer_check(grpc_millis* next) {
 
 grpc_timer_vtable grpc_generic_timer_vtable = {
     timer_init,      timer_cancel,        timer_check,
-    timer_list_init, timer_list_shutdown, timer_consume_kick};
+    timer_list_init, timer_list_shutdown, timer_list_shutdown_post_fork,
+    timer_consume_kick};

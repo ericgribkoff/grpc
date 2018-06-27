@@ -80,12 +80,14 @@ static grpc_timer_check_result timer_check(grpc_millis* next) {
 
 static void timer_list_init() {}
 static void timer_list_shutdown() {}
+static void timer_list_shutdown_post_fork() {}
 
 static void timer_consume_kick(void) {}
 
 static grpc_timer_vtable custom_timer_vtable = {
     timer_init,      timer_cancel,        timer_check,
-    timer_list_init, timer_list_shutdown, timer_consume_kick};
+    timer_list_init, timer_list_shutdown, timer_list_shutdown_post_fork,
+    timer_consume_kick};
 
 void grpc_custom_timer_init(grpc_custom_timer_vtable* impl) {
   custom_timer_impl = impl;
