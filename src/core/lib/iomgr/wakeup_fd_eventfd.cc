@@ -28,6 +28,7 @@
 
 #include <grpc/support/log.h>
 
+#include "src/core/lib/gprpp/fork.h"
 #include "src/core/lib/iomgr/wakeup_fd_posix.h"
 #include "src/core/lib/profiling/timers.h"
 
@@ -36,6 +37,7 @@ static grpc_error* eventfd_create(grpc_wakeup_fd* fd_info) {
   if (efd < 0) {
     return GRPC_OS_ERROR(errno, "eventfd");
   }
+  grpc_core::Fork::AddFd(efd);
   fd_info->read_fd = efd;
   fd_info->write_fd = -1;
   return GRPC_ERROR_NONE;

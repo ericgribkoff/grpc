@@ -23,6 +23,7 @@
 #ifdef GRPC_POSIX_FORK
 
 #include <string.h>
+#include <unistd.h>
 
 #include <grpc/fork.h>
 #include <grpc/support/log.h>
@@ -47,7 +48,13 @@
 namespace {
 bool skipped_handler = true;
 bool registered_handlers = false;
+// int current_fd_count = 0;
+// int* open_fds = new int[100]; // TODO: fix leak, allow removal
 }  // namespace
+
+// void grpc_fork_add_fd(int fd) {
+//   open_fds[current_fd_count++] = fd;
+// }
 
 void grpc_prefork() {
   grpc_core::ExecCtx exec_ctx;
@@ -86,13 +93,19 @@ void grpc_postfork_parent() {
 
 void grpc_postfork_child() {
   if (!skipped_handler) {
+    grpc_core::Fork::CloseFds();
     grpc_core::Fork::AllowExecCtx();
     grpc_core::ExecCtx exec_ctx;
-    grpc_timer_list_init();
-    grpc_backup_poller_reset_for_fork();
-    grpc_subchannel_index_init();
+    // grpc_timer_list_init();
+    // grpc_backup_poller_reset_for_fork();
+    // grpc_subchannel_index_init();
     grpc_timer_manager_set_threading(true);
     grpc_executor_set_threading(true);
+    // for (int i = 0; i < current_fd_count; i++) {
+    //   close(open_fds[i]);
+    // }
+    // gpr_free(open_fds);
+    // open_fds = new int[100];
   }
 }
 
