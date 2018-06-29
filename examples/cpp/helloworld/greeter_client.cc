@@ -86,8 +86,8 @@ class GreeterClient {
       if (!stream->Write(request)) {
         break;
       }
-      std::cout << "Sleeping for 60 seconds" << std::endl;
-      std::this_thread::sleep_for(std::chrono::seconds(60));
+      std::cout << "Sleeping for 5 seconds" << std::endl;
+      std::this_thread::sleep_for(std::chrono::seconds(5));
       HelloReply reply;
       if (!stream->Read(&reply)) {
         break;
@@ -116,7 +116,7 @@ class GreeterClient {
 
 void doRpc(std::string str) {
   GreeterClient greeter(grpc::CreateChannel(
-      "localhost:50052", grpc::InsecureChannelCredentials()));
+      "localhost:50051", grpc::InsecureChannelCredentials()));
   std::cout << "doRpc: Channel created" << std::endl;
   std::string user(str);
   std::string reply = greeter.SayHello(user);
@@ -139,17 +139,17 @@ int main(int argc, char** argv) {
   // localhost at port 50051). We indicate that the channel isn't authenticated
   // (use of InsecureChannelCredentials()).
 
-  // std::shared_ptr<Channel> channel = grpc::CreateChannel(
-  //     "localhost:50051", grpc::InsecureChannelCredentials());
+  std::shared_ptr<Channel> channel = grpc::CreateChannel(
+      "localhost:50051", grpc::InsecureChannelCredentials());
 
-  grpc::ChannelArguments chan_args;
-  chan_args.SetInt(GRPC_ARG_KEEPALIVE_TIME_MS, 10000);
-  chan_args.SetInt(GRPC_ARG_KEEPALIVE_TIMEOUT_MS, 10000);
-  chan_args.SetInt(GRPC_ARG_HTTP2_MIN_SENT_PING_INTERVAL_WITHOUT_DATA_MS,
-                   10000);
-  chan_args.SetInt(GRPC_ARG_KEEPALIVE_PERMIT_WITHOUT_CALLS, 1);
-  std::shared_ptr<Channel> channel = grpc::CreateCustomChannel(
-      "localhost:50051", grpc::InsecureChannelCredentials(), chan_args);
+  // grpc::ChannelArguments chan_args;
+  // chan_args.SetInt(GRPC_ARG_KEEPALIVE_TIME_MS, 10000);
+  // chan_args.SetInt(GRPC_ARG_KEEPALIVE_TIMEOUT_MS, 10000);
+  // chan_args.SetInt(GRPC_ARG_HTTP2_MIN_SENT_PING_INTERVAL_WITHOUT_DATA_MS,
+  //                  10000);
+  // chan_args.SetInt(GRPC_ARG_KEEPALIVE_PERMIT_WITHOUT_CALLS, 1);
+  // std::shared_ptr<Channel> channel = grpc::CreateCustomChannel(
+  //     "localhost:50051", grpc::InsecureChannelCredentials(), chan_args);
   
   GreeterClient *greeter = new GreeterClient(channel);
   // for (int i = 0; i < 10; i++) {
@@ -199,18 +199,25 @@ int main(int argc, char** argv) {
   } else {
     std::cout << "Child process ID: " << ::getpid() << std::endl;
 
-    std::shared_ptr<Channel> child_channel = grpc::CreateChannel(
-      "localhost:50051", grpc::InsecureChannelCredentials());
-    GreeterClient *child_greeter = new GreeterClient(child_channel);
-    std::string child_reply = child_greeter->SayHello("parent");
-    std::cout << "Child received: " << child_reply << std::endl;
+    // std::string child_same_channel_reply = greeter->SayHello("child same channel");
+    // std::cout << "Child received: " << child_same_channel_reply << std::endl;
+    // child_same_channel_reply = greeter->SayHello("child same channel attempt 2");
+    // std::cout << "Child received: " << child_same_channel_reply << std::endl;
+
+
+    // std::shared_ptr<Channel> child_channel = grpc::CreateChannel(
+    //   "localhost:50051", grpc::InsecureChannelCredentials());
+    // GreeterClient *child_greeter = new GreeterClient(child_channel);
+    // std::string child_reply = child_greeter->SayHello("parent");
+
+    // std::cout << "Child received: " << child_reply << std::endl;
 //    channel->EnterLame();
     //std::cout << "Forked: " << greeter->SayHello("blah") << std::endl;
     //gpr_setenv("GRPC_VERBOSITY", "DEBUG");
     //gpr_setenv("GRPC_TRACE", "all");
     //doRpcAndWait("child");
 
-    std::this_thread::sleep_for(std::chrono::seconds(60));
+    std::this_thread::sleep_for(std::chrono::seconds(1));
     doRpc("child");
     std::this_thread::sleep_for(std::chrono::seconds(3));
     doRpc("child again");

@@ -238,6 +238,14 @@ void Fork::CloseFds() {
   openFds = new int[100];
 }
 
+void Fork::IncrementForkEpoch() {
+  forkEpoch++;
+}
+
+int Fork::GetForkEpoch() {
+  return forkEpoch;
+}
+
 bool Fork::BlockExecCtx() {
   if (supportEnabled_) {
     return execCtxState_->BlockExecCtx();
@@ -274,5 +282,6 @@ bool Fork::supportEnabled_ = false;
 bool Fork::overrideEnabled_ = false;
 int Fork::currentFdCount = 0;
 int* Fork::openFds = new int[100];
+int Fork::forkEpoch = 0;
 
 }  // namespace grpc_core

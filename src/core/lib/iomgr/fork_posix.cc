@@ -93,7 +93,8 @@ void grpc_postfork_parent() {
 
 void grpc_postfork_child() {
   if (!skipped_handler) {
-    grpc_core::Fork::CloseFds();
+    grpc_core::Fork::IncrementForkEpoch();
+    // grpc_core::Fork::CloseFds();
     grpc_core::Fork::AllowExecCtx();
     grpc_core::ExecCtx exec_ctx;
     // grpc_timer_list_init();

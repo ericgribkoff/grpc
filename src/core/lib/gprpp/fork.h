@@ -50,6 +50,10 @@ class Fork {
 
   static void CloseFds();
 
+  static void IncrementForkEpoch();
+
+  static int GetForkEpoch();
+
   // Check if there is a single active ExecCtx
   // (the one used to invoke this function).  If there are more,
   // return false.  Otherwise, return true and block creation of
@@ -78,6 +82,7 @@ class Fork {
   static bool overrideEnabled_;
   static int currentFdCount;
   static int* openFds;
+  static int forkEpoch;
 };
 
 }  // namespace grpc_core

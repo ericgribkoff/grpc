@@ -485,10 +485,16 @@ static bool fd_is_shutdown(grpc_fd* fd) {
 /* Might be called multiple times */
 static void fd_shutdown(grpc_fd* fd, grpc_error* why) {
   if (fd->read_closure->SetShutdown(GRPC_ERROR_REF(why))) {
-    if (shutdown(fd->fd, SHUT_RDWR)) {
-      if (errno != ENOTCONN) {
-        gpr_log(GPR_ERROR, "Error shutting down fd %d. errno: %d",
-                grpc_fd_wrapped_fd(fd), errno);
+    if (grpc_core::Fork::GetForkEpoch() > 0) {
+      // TODO(ericgribkoff) What happens if this is later close()'d again?
+      gpr_log(GPR_ERROR, "skipping shutdown due to fork epoch > 0");
+      gpr_log(GPR_ERROR, "result of close: %d", close(fd->fd));
+    } else {
+      if (shutdown(fd->fd, SHUT_RDWR)) {
+        if (errno != ENOTCONN) {
+          gpr_log(GPR_ERROR, "Error shutting down fd %d. errno: %d",
+                  grpc_fd_wrapped_fd(fd), errno);
+        }
       }
     }
     fd->write_closure->SetShutdown(GRPC_ERROR_REF(why));
@@ -957,6 +963,11 @@ static void pollset_destroy(grpc_pollset* pollset) {
 static grpc_error* pollable_epoll(pollable* p, grpc_millis deadline) {
   GPR_TIMER_SCOPE("pollable_epoll", 0);
   int timeout = poll_deadline_to_millis_timeout(deadline);
+
+  // if (grpc_core::Fork::GetForkEpoch() > -1) {
+  //   gpr_log(GPR_ERROR, "fork epoch > 0");
+  //   return GRPC_OS_ERROR(1, "made up");
+  // }
 
   if (grpc_polling_trace.enabled()) {
     char* desc = pollable_desc(p);
