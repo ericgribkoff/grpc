@@ -381,16 +381,6 @@ static void tcp_do_read(grpc_tcp* tcp) {
 
   GPR_ASSERT(tcp->incoming_buffer->count <= MAX_READ_IOVEC);
 
-  if (grpc_core::Fork::GetForkEpoch() > 0) {
-    gpr_log(GPR_ERROR, "fork epoch > 0");
-    grpc_slice_buffer_reset_and_unref_internal(tcp->incoming_buffer);
-    call_read_cb(
-        tcp, tcp_annotate_error(
-                 GRPC_ERROR_CREATE_FROM_STATIC_STRING("Fork triggered socket close"), tcp));
-    TCP_UNREF(tcp, "read");
-    return;
-  }
-
   for (i = 0; i < tcp->incoming_buffer->count; i++) {
     iov[i].iov_base = GRPC_SLICE_START_PTR(tcp->incoming_buffer->slices[i]);
     iov[i].iov_len = GRPC_SLICE_LENGTH(tcp->incoming_buffer->slices[i]);
@@ -668,6 +658,15 @@ static void tcp_write(grpc_endpoint* ep, grpc_slice_buffer* buf,
     }
   }
 
+  if (ep->fork_epoch < grpc_core::Fork::GetForkEpoch()) {
+    GRPC_CLOSURE_SCHED(
+      cb, grpc_fd_is_shutdown(tcp->em_fd)
+              ? tcp_annotate_error(
+                    GRPC_ERROR_CREATE_FROM_STATIC_STRING("Fork triggered socket close"), tcp)
+              : GRPC_ERROR_NONE);
+    return;
+  }
+
   GPR_ASSERT(tcp->write_cb == nullptr);
 
   if (buf->length == 0) {
@@ -784,6 +783,7 @@ grpc_endpoint* grpc_tcp_create(grpc_fd* em_fd,
 
   grpc_tcp* tcp = static_cast<grpc_tcp*>(gpr_malloc(sizeof(grpc_tcp)));
   tcp->base.vtable = &vtable;
+  tcp->base.fork_epoch = grpc_core::Fork::GetForkEpoch();
   tcp->peer_string = gpr_strdup(peer_string);
   tcp->fd = grpc_fd_wrapped_fd(em_fd);
   tcp->read_cb = nullptr;

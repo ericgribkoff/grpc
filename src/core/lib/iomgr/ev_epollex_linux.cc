@@ -266,6 +266,7 @@ struct grpc_pollset {
   bool already_shutdown;
   grpc_pollset_worker* root_worker;
   int containing_pollset_set_count;
+  int fork_epoch;
 };
 
 /*******************************************************************************
@@ -825,6 +826,7 @@ static void pollset_init(grpc_pollset* pollset, gpr_mu** mu) {
   pollset->already_shutdown = false;
   pollset->root_worker = nullptr;
   pollset->containing_pollset_set_count = 0;
+  pollset->fork_epoch = grpc_core::Fork::GetForkEpoch();
   *mu = &pollset->mu;
 }
 
@@ -963,11 +965,6 @@ static void pollset_destroy(grpc_pollset* pollset) {
 static grpc_error* pollable_epoll(pollable* p, grpc_millis deadline) {
   GPR_TIMER_SCOPE("pollable_epoll", 0);
   int timeout = poll_deadline_to_millis_timeout(deadline);
-
-  // if (grpc_core::Fork::GetForkEpoch() > -1) {
-  //   gpr_log(GPR_ERROR, "fork epoch > 0");
-  //   return GRPC_OS_ERROR(1, "made up");
-  // }
 
   if (grpc_polling_trace.enabled()) {
     char* desc = pollable_desc(p);
@@ -1159,6 +1156,12 @@ static grpc_error* pollset_work(grpc_pollset* pollset,
             pollset, worker_hdl, WORKER_PTR, grpc_core::ExecCtx::Get()->Now(),
             deadline, pollset->kicked_without_poller, pollset->active_pollable);
   }
+
+  if (pollset->fork_epoch < grpc_core::Fork::GetForkEpoch()) {
+    gpr_log(GPR_ERROR, "fork epoch > 0");
+    return GRPC_ERROR_NONE;
+  }
+
   static const char* err_desc = "pollset_work";
   grpc_error* error = GRPC_ERROR_NONE;
   if (pollset->kicked_without_poller) {

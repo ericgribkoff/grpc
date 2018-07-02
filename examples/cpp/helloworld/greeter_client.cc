@@ -116,7 +116,7 @@ class GreeterClient {
 
 void doRpc(std::string str) {
   GreeterClient greeter(grpc::CreateChannel(
-      "localhost:50051", grpc::InsecureChannelCredentials()));
+      "localhost:50052", grpc::InsecureChannelCredentials()));
   std::cout << "doRpc: Channel created" << std::endl;
   std::string user(str);
   std::string reply = greeter.SayHello(user);
@@ -139,17 +139,17 @@ int main(int argc, char** argv) {
   // localhost at port 50051). We indicate that the channel isn't authenticated
   // (use of InsecureChannelCredentials()).
 
-  std::shared_ptr<Channel> channel = grpc::CreateChannel(
-      "localhost:50051", grpc::InsecureChannelCredentials());
+  // std::shared_ptr<Channel> channel = grpc::CreateChannel(
+      // "localhost:50051", grpc::InsecureChannelCredentials());
 
-  // grpc::ChannelArguments chan_args;
-  // chan_args.SetInt(GRPC_ARG_KEEPALIVE_TIME_MS, 10000);
-  // chan_args.SetInt(GRPC_ARG_KEEPALIVE_TIMEOUT_MS, 10000);
-  // chan_args.SetInt(GRPC_ARG_HTTP2_MIN_SENT_PING_INTERVAL_WITHOUT_DATA_MS,
-  //                  10000);
-  // chan_args.SetInt(GRPC_ARG_KEEPALIVE_PERMIT_WITHOUT_CALLS, 1);
-  // std::shared_ptr<Channel> channel = grpc::CreateCustomChannel(
-  //     "localhost:50051", grpc::InsecureChannelCredentials(), chan_args);
+  grpc::ChannelArguments chan_args;
+  chan_args.SetInt(GRPC_ARG_KEEPALIVE_TIME_MS, 10000);
+  chan_args.SetInt(GRPC_ARG_KEEPALIVE_TIMEOUT_MS, 10000);
+  chan_args.SetInt(GRPC_ARG_HTTP2_MIN_SENT_PING_INTERVAL_WITHOUT_DATA_MS,
+                   10000);
+  chan_args.SetInt(GRPC_ARG_KEEPALIVE_PERMIT_WITHOUT_CALLS, 1);
+  std::shared_ptr<Channel> channel = grpc::CreateCustomChannel(
+      "localhost:50051", grpc::InsecureChannelCredentials(), chan_args);
   
   GreeterClient *greeter = new GreeterClient(channel);
   // for (int i = 0; i < 10; i++) {
