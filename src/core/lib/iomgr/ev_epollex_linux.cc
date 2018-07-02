@@ -227,6 +227,8 @@ struct grpc_fd {
 
   // Do we need to track EPOLLERR events separately?
   bool track_err;
+
+  int fork_epoch;
 };
 
 static void fd_global_init(void);
@@ -425,6 +427,8 @@ static grpc_fd* fd_create(int fd, const char* name, bool track_err) {
   new_fd->freelist_next = nullptr;
   new_fd->on_done_closure = nullptr;
 
+  new_fd->fork_epoch = grpc_core::Fork::GetForkEpoch();
+
   char* fd_name;
   gpr_asprintf(&fd_name, "%s fd=%d", name, fd);
   grpc_iomgr_register_object(&new_fd->iomgr_object, fd_name);
@@ -486,9 +490,8 @@ static bool fd_is_shutdown(grpc_fd* fd) {
 /* Might be called multiple times */
 static void fd_shutdown(grpc_fd* fd, grpc_error* why) {
   if (fd->read_closure->SetShutdown(GRPC_ERROR_REF(why))) {
-    if (grpc_core::Fork::GetForkEpoch() > 0) {
-      // TODO(ericgribkoff) What happens if this is later close()'d again?
-      gpr_log(GPR_ERROR, "skipping shutdown due to fork epoch > 0");
+    if (fd->fork_epoch < grpc_core::Fork::GetForkEpoch()) {
+      gpr_log(GPR_ERROR, "skipping shutdown due to old fork epoch");
       gpr_log(GPR_ERROR, "result of close: %d", close(fd->fd));
     } else {
       if (shutdown(fd->fd, SHUT_RDWR)) {

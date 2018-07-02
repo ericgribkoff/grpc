@@ -133,6 +133,8 @@ struct grpc_subchannel {
   bool backoff_begun;
   /** our alarm */
   grpc_timer alarm;
+
+  int fork_epoch;
 };
 
 struct grpc_subchannel_call {
@@ -318,8 +320,14 @@ grpc_subchannel* grpc_subchannel_create(grpc_connector* connector,
   grpc_subchannel_key* key = grpc_subchannel_key_create(args);
   grpc_subchannel* c = grpc_subchannel_index_find(key);
   if (c) {
-    grpc_subchannel_key_destroy(key);
-    return c;
+    if (c->fork_epoch < grpc_core::Fork::GetForkEpoch()) {
+      grpc_subchannel_index_unregister(key, c);
+      GRPC_SUBCHANNEL_UNREF(c, "new fork epoch");
+      c = nullptr;
+    } else {
+      grpc_subchannel_key_destroy(key);
+      return c;
+    }
   }
 
   GRPC_STATS_INC_CLIENT_SUBCHANNELS_CREATED();
