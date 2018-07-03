@@ -103,6 +103,7 @@ struct pollable {
   gpr_refcount refs;
 
   int epfd;
+  int fork_epoch;
   grpc_wakeup_fd wakeup;
 
   // only for type fd... one ref to the owner fd
@@ -561,6 +562,7 @@ static grpc_error* pollable_create(pollable_type type, pollable** p) {
   gpr_ref_init(&(*p)->refs, 1);
   gpr_mu_init(&(*p)->mu);
   (*p)->epfd = epfd;
+  (*p)->fork_epoch = grpc_core::Fork::GetForkEpoch();
   (*p)->owner_fd = nullptr;
   (*p)->pollset_set = nullptr;
   (*p)->next = (*p)->prev = *p;
@@ -609,6 +611,15 @@ static grpc_error* pollable_add_fd(pollable* p, grpc_fd* fd) {
   grpc_error* error = GRPC_ERROR_NONE;
   static const char* err_desc = "pollable_add_fd";
   const int epfd = p->epfd;
+
+  if (p->fork_epoch < grpc_core::Fork::GetForkEpoch()) {
+    append_error(
+        &error,
+        GRPC_ERROR_CREATE_FROM_STATIC_STRING("Adding fd to inherited pollable"),
+        err_desc);
+    return error;
+  }
+
   gpr_mu_lock(&p->mu);
   p->fd_cache_counter++;
 
