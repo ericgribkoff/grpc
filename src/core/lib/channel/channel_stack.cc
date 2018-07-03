@@ -119,6 +119,7 @@ grpc_error* grpc_channel_stack_init(
     args.is_first = i == 0;
     args.is_last = i == (filter_count - 1);
     elems[i].filter = filters[i];
+    gpr_log(GPR_DEBUG, "filter %lu: %s", i, filters[i]->name);
     elems[i].channel_data = user_data;
     grpc_error* error = elems[i].filter->init_channel_elem(&elems[i], &args);
     if (error != GRPC_ERROR_NONE) {
@@ -172,6 +173,7 @@ grpc_error* grpc_call_stack_init(grpc_channel_stack* channel_stack,
   grpc_error* first_error = GRPC_ERROR_NONE;
   for (i = 0; i < count; i++) {
     call_elems[i].filter = channel_elems[i].filter;
+    gpr_log(GPR_DEBUG, "filter %lu: %s", i, call_elems[i].filter->name);
     call_elems[i].channel_data = channel_elems[i].channel_data;
     call_elems[i].call_data = user_data;
     grpc_error* error =

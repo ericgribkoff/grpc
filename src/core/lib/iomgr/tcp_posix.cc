@@ -658,12 +658,13 @@ static void tcp_write(grpc_endpoint* ep, grpc_slice_buffer* buf,
     }
   }
 
+  gpr_log(GPR_ERROR, "in tcp_write");
   if (ep->fork_epoch < grpc_core::Fork::GetForkEpoch()) {
-    GRPC_CLOSURE_SCHED(
-      cb, grpc_fd_is_shutdown(tcp->em_fd)
-              ? tcp_annotate_error(
-                    GRPC_ERROR_CREATE_FROM_STATIC_STRING("Fork triggered socket close"), tcp)
-              : GRPC_ERROR_NONE);
+    gpr_log(GPR_ERROR, "aborting due to fork epoch");
+    GRPC_CLOSURE_SCHED(cb,
+                       tcp_annotate_error(GRPC_ERROR_CREATE_FROM_STATIC_STRING(
+                                              "Fork triggered socket close"),
+                                          tcp));
     return;
   }
 
