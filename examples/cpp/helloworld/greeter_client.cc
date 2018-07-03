@@ -246,6 +246,76 @@ void continueCallInChild() {
   }
 }
 
+void midCallRecovery() {
+  std::shared_ptr<Channel> channel = grpc::CreateChannel(
+      "localhost:50051", grpc::InsecureChannelCredentials());
+  GreeterClient* greeter = new GreeterClient(channel);
+
+  ClientContext context;
+  std::shared_ptr<grpc::ClientReaderWriter<HelloRequest, HelloReply> > stream(
+      Greeter::NewStub(channel)->SayHelloStreaming(&context));
+
+  HelloRequest request;
+  request.set_name("before fork stream");
+  if (!stream->Write(request)) {
+    std::cout << "Error writing" << std::endl;
+  }
+  HelloReply reply;
+  if (stream->Read(&reply)) {
+    std::cout << "Got message " << reply.message() << std::endl;
+  }
+  std::cout << "Original process ID: " << ::getpid() << std::endl;
+  if (fork() != 0) {
+    std::cout << "Parent process ID: " << ::getpid() << std::endl;
+    std::this_thread::sleep_for(std::chrono::seconds(2));
+
+    HelloRequest request2;
+    request2.set_name("after fork stream");
+    if (!stream->Write(request2)) {
+      std::cout << "Error writing" << std::endl;
+    }
+    HelloReply reply2;
+    if (stream->Read(&reply2)) {
+      std::cout << "Got message " << reply2.message() << std::endl;
+    }
+
+    stream->WritesDone();
+    std::cout << "(parent) StreamingHello done" << std::endl;
+
+    Status grpcStatus = stream->Finish();
+    std::cout << "(parent) Status received" << std::endl;
+    if (!grpcStatus.ok()) {
+      std::cout << "(parent) Streaming rpc failed." << std::endl;
+      std::cout << grpcStatus.error_code() << std::endl;
+      std::cout << grpcStatus.error_message() << std::endl;
+      std::cout << grpcStatus.error_details() << std::endl;
+    }
+
+    int status;
+    pid_t pid = wait(&status);
+    std::cout << "(" << ::getpid() << ") Child process is done" << std::endl;
+  } else {
+    std::cout << "Child process ID: " << ::getpid() << std::endl;
+
+    // Segfaults for epollex. Not for epoll1.
+    // Must be epoll_ctl a child fd onto a parent epfd?
+    stream->WritesDone();
+    std::cout << "(child) StreamingHello done" << std::endl;
+    Status grpcStatus = stream->Finish();
+    std::cout << "(child) Status received" << std::endl;
+    if (!grpcStatus.ok()) {
+      std::cout << "(child) Streaming rpc failed." << std::endl;
+      std::cout << grpcStatus.error_code() << std::endl;
+      std::cout << grpcStatus.error_message() << std::endl;
+      std::cout << grpcStatus.error_details() << std::endl;
+    }
+
+    std::string child_same_channel_reply =
+        greeter->SayHello("child same channel");
+    std::cout << "Child received: " << child_same_channel_reply << std::endl;
+  }
+}
+
 void reuseChannelInChild() {
   std::shared_ptr<Channel> channel = grpc::CreateChannel(
       "localhost:50051", grpc::InsecureChannelCredentials());
@@ -335,6 +405,9 @@ int main(int argc, char** argv) {
   } else if (test_case == "continue_call_in_child") {
     std::cout << "Running test case continue_call_in_child" << std::endl;
     continueCallInChild();
+  } else if (test_case == "mid_call_recovery") {
+    std::cout << "Running test case mid_call_recovery" << std::endl;
+    midCallRecovery();
   } else if (test_case == "reuse_channel_in_child") {
     std::cout << "Running test case reuse_channel_in_child" << std::endl;
     reuseChannelInChild();
