@@ -282,6 +282,34 @@ void reuseChannelInChild() {
   }
 }
 
+void cleanShutdown() {
+  std::shared_ptr<Channel> channel = grpc::CreateChannel(
+      "localhost:50051", grpc::InsecureChannelCredentials());
+  GreeterClient* greeter = new GreeterClient(channel);
+  std::string user("world2");
+  std::string replyStr = greeter->SayHello(user);
+  std::cout << "Greeter received: " << replyStr << std::endl;
+
+  std::cout << "Original process ID: " << ::getpid() << std::endl;
+  if (fork() != 0) {
+    std::cout << "Parent process ID: " << ::getpid() << std::endl;
+    std::this_thread::sleep_for(std::chrono::seconds(3));
+    std::string parent_reply = greeter->SayHello("parent");
+    std::cout << "Parent received: " << parent_reply << std::endl;
+
+    int status;
+    pid_t pid = wait(&status);
+    std::cout << "(" << ::getpid() << ") Child process is done" << std::endl;
+
+    std::cout << "(" << ::getpid() << ") Streamer thread is done" << std::endl;
+  } else {
+    std::cout << "Child process ID: " << ::getpid() << std::endl;
+    delete greeter;
+    channel.reset();
+    std::this_thread::sleep_for(std::chrono::seconds(5));
+  }
+}
+
 int main(int argc, char** argv) {
   // Test cases:
   //   keep_alive - pings shouldn't continue in child
@@ -289,6 +317,7 @@ int main(int argc, char** argv) {
   //     without using the same subchannel from parent
   //   continue_call_in_child - should return error in child, succeed in parent
   //   reuse_channel_in_child - should reconnect and succeed in child
+  //   clean_shutdown - fork should not prevent clean gRPC shutdown in child
 
   std::string test_case;
   if (argc > 0) {
@@ -307,6 +336,9 @@ int main(int argc, char** argv) {
   } else if (test_case == "reuse_channel_in_child") {
     std::cout << "Running test case reuse_channel_in_child" << std::endl;
     reuseChannelInChild();
+  } else if (test_case == "clean_shutdown") {
+    std::cout << "Running test case clean_shutdown" << std::endl;
+    cleanShutdown();
   } else {
     std::cout << "Unknown test case" << std::endl;
   }

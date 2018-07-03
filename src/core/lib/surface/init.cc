@@ -160,6 +160,7 @@ void grpc_shutdown(void) {
   gpr_mu_lock(&g_init_mu);
   if (--g_initializations == 0) {
     {
+      gpr_log(GPR_DEBUG, "Really shutting down");
       grpc_core::ExecCtx exec_ctx(0);
       {
         grpc_timer_manager_set_threading(
@@ -183,6 +184,7 @@ void grpc_shutdown(void) {
     }
     grpc_core::ExecCtx::GlobalShutdown();
   }
+  gpr_log(GPR_DEBUG, "g_initializations=%d", g_initializations);
   gpr_mu_unlock(&g_init_mu);
 }
 
