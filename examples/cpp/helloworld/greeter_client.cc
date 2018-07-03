@@ -205,6 +205,16 @@ void continueCallInChild() {
     std::cout << "Parent process ID: " << ::getpid() << std::endl;
     std::this_thread::sleep_for(std::chrono::seconds(2));
 
+    HelloRequest request2;
+    request2.set_name("after fork stream");
+    if (!stream->Write(request2)) {
+      std::cout << "Error writing" << std::endl;
+    }
+    HelloReply reply2;
+    if (stream->Read(&reply2)) {
+      std::cout << "Got message " << reply2.message() << std::endl;
+    }
+
     stream->WritesDone();
     std::cout << "(parent) StreamingHello done" << std::endl;
 
