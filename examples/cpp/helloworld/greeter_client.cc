@@ -16,18 +16,17 @@
  *
  */
 
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
+#include <chrono>
 #include <iostream>
 #include <memory>
 #include <string>
-#include <chrono>
 #include <thread>
-#include <unistd.h>
-#include <sys/types.h>
-#include <sys/wait.h>
 
-
-#include "../../../src/core/lib/gpr/env.h"
 #include <grpcpp/grpcpp.h>
+#include "../../../src/core/lib/gpr/env.h"
 
 #ifdef BAZEL_BUILD
 #include "examples/protos/helloworld.grpc.pb.h"
@@ -38,9 +37,9 @@
 using grpc::Channel;
 using grpc::ClientContext;
 using grpc::Status;
-using helloworld::HelloRequest;
-using helloworld::HelloReply;
 using helloworld::Greeter;
+using helloworld::HelloReply;
+using helloworld::HelloRequest;
 
 class GreeterClient {
  public:
@@ -74,27 +73,25 @@ class GreeterClient {
     }
   }
 
-  void StreamingHello() {
+  void StreamingHello(int interations, int interval) {
     ClientContext context;
 
     std::shared_ptr<grpc::ClientReaderWriter<HelloRequest, HelloReply> > stream(
         stub_->SayHelloStreaming(&context));
 
-    for (int i = 0; i < 100; i++) {
+    for (int i = 0; i < interations; i++) {
       HelloRequest request;
       request.set_name(std::to_string(i));
       if (!stream->Write(request)) {
         break;
       }
-      std::cout << "Sleeping for 5 seconds" << std::endl;
-      std::this_thread::sleep_for(std::chrono::seconds(5));
+      std::cout << "Sleeping for " << interval << " seconds" << std::endl;
+      std::this_thread::sleep_for(std::chrono::seconds(interval));
       HelloReply reply;
       if (!stream->Read(&reply)) {
         break;
       }
       std::cout << "Got message " << reply.message() << std::endl;
-      //context.TryCancel();
-      std::this_thread::sleep_for(std::chrono::seconds(3));
     }
     stream->WritesDone();
     std::cout << "StreamingHello done" << std::endl;
@@ -107,68 +104,90 @@ class GreeterClient {
       std::cout << status.error_message() << std::endl;
       std::cout << status.error_details() << std::endl;
     }
-//    std::cout << "Returning without calling Finish()" << std::endl;
   }
 
  private:
   std::unique_ptr<Greeter::Stub> stub_;
 };
 
-void doRpc(std::string str) {
-  GreeterClient greeter(grpc::CreateChannel(
-      "localhost:50051", grpc::InsecureChannelCredentials()));
-  std::cout << "doRpc: Channel created" << std::endl;
-  std::string user(str);
-  std::string reply = greeter.SayHello(user);
-  std::cout << "doRpc: Greeter received: " << reply << std::endl;
-}
+void keepAlive() {
+  grpc::ChannelArguments chan_args;
+  chan_args.SetInt(GRPC_ARG_KEEPALIVE_TIME_MS, 10000);
+  chan_args.SetInt(GRPC_ARG_KEEPALIVE_TIMEOUT_MS, 10000);
+  chan_args.SetInt(GRPC_ARG_HTTP2_MIN_SENT_PING_INTERVAL_WITHOUT_DATA_MS,
+                   10000);
+  chan_args.SetInt(GRPC_ARG_KEEPALIVE_PERMIT_WITHOUT_CALLS, 1);
+  std::shared_ptr<Channel> channel = grpc::CreateCustomChannel(
+      "localhost:50051", grpc::InsecureChannelCredentials(), chan_args);
 
-void doRpcAndWait(std::string str) {
-  GreeterClient greeter(grpc::CreateChannel(
-      "localhost:50051", grpc::InsecureChannelCredentials()));
-  std::cout << "Channel created" << std::endl;
-  std::string user(str);
-  std::string reply = greeter.SayHello(user);
-  std::cout << "Greeter received: " << reply << std::endl;
-  std::this_thread::sleep_for(std::chrono::seconds(10));
-}
-
-int main(int argc, char** argv) {
-  // Instantiate the client. It requires a channel, out of which the actual RPCs
-  // are created. This channel models a connection to an endpoint (in this case,
-  // localhost at port 50051). We indicate that the channel isn't authenticated
-  // (use of InsecureChannelCredentials()).
-
-  std::shared_ptr<Channel> channel = grpc::CreateChannel(
-      "localhost:50051", grpc::InsecureChannelCredentials());
-
-  // grpc::ChannelArguments chan_args;
-  // chan_args.SetInt(GRPC_ARG_KEEPALIVE_TIME_MS, 10000);
-  // chan_args.SetInt(GRPC_ARG_KEEPALIVE_TIMEOUT_MS, 10000);
-  // chan_args.SetInt(GRPC_ARG_HTTP2_MIN_SENT_PING_INTERVAL_WITHOUT_DATA_MS,
-  //                  10000);
-  // chan_args.SetInt(GRPC_ARG_KEEPALIVE_PERMIT_WITHOUT_CALLS, 1);
-  // std::shared_ptr<Channel> channel = grpc::CreateCustomChannel(
-  //     "localhost:50051", grpc::InsecureChannelCredentials(), chan_args);
-  
-  GreeterClient *greeter = new GreeterClient(channel);
-  // for (int i = 0; i < 10; i++) {
+  GreeterClient* greeter = new GreeterClient(channel);
   std::string user("world2");
   std::string replyStr = greeter->SayHello(user);
   std::cout << "Greeter received: " << replyStr << std::endl;
-  //   std::this_thread::sleep_for(std::chrono::seconds(15));
-  // }
 
-  //exit(0);
-  //channel->EnterLame();
-  //std::string reply2 = greeter->SayHello("second time");
-  //std::cout << "Greeter received: " << reply2 << std::endl;
-   std::thread streamer([greeter]() {
-     greeter->StreamingHello();
-   });
+  std::thread streamer([greeter]() { greeter->StreamingHello(5, 3); });
+
+  std::cout << "Original process ID: " << ::getpid() << std::endl;
+  if (fork() != 0) {
+    std::cout << "Parent process ID: " << ::getpid() << std::endl;
+    std::this_thread::sleep_for(std::chrono::seconds(2));
+    std::string parent_reply = greeter->SayHello("parent");
+    std::cout << "Parent received: " << parent_reply << std::endl;
+
+    int status;
+    pid_t pid = wait(&status);
+    std::cout << "(" << ::getpid() << ") Child process is done" << std::endl;
+
+    streamer.join();
+    std::cout << "(" << ::getpid() << ") Streamer thread is done" << std::endl;
+  } else {
+    std::cout << "Child process ID: " << ::getpid() << std::endl;
+    std::this_thread::sleep_for(std::chrono::seconds(20));
+    streamer.detach();
+  }
+}
+
+void newChannelSameArgs() {
+  std::shared_ptr<Channel> channel = grpc::CreateChannel(
+      "localhost:50051", grpc::InsecureChannelCredentials());
+  GreeterClient* greeter = new GreeterClient(channel);
+  std::string user("world2");
+  std::string replyStr = greeter->SayHello(user);
+  std::cout << "Greeter received: " << replyStr << std::endl;
+
+  std::thread streamer([greeter]() { greeter->StreamingHello(3, 1); });
+
+  std::cout << "Original process ID: " << ::getpid() << std::endl;
+  if (fork() != 0) {
+    std::cout << "Parent process ID: " << ::getpid() << std::endl;
+    std::this_thread::sleep_for(std::chrono::seconds(2));
+    std::string parent_reply = greeter->SayHello("parent");
+    std::cout << "Parent received: " << parent_reply << std::endl;
+
+    int status;
+    pid_t pid = wait(&status);
+    std::cout << "(" << ::getpid() << ") Child process is done" << std::endl;
+
+    streamer.join();
+    std::cout << "(" << ::getpid() << ") Streamer thread is done" << std::endl;
+  } else {
+    std::cout << "Child process ID: " << ::getpid() << std::endl;
+    std::shared_ptr<Channel> child_channel = grpc::CreateChannel(
+        "localhost:50051", grpc::InsecureChannelCredentials());
+    GreeterClient* child_greeter = new GreeterClient(child_channel);
+    std::string child_user("child");
+    std::cout << "Child received: " << child_greeter->SayHello(child_user)
+              << std::endl;
+    streamer.detach();
+  }
+}
+
+void continueCallInChild() {
+  std::shared_ptr<Channel> channel = grpc::CreateChannel(
+      "localhost:50051", grpc::InsecureChannelCredentials());
+  GreeterClient* greeter = new GreeterClient(channel);
 
   ClientContext context;
-
   std::shared_ptr<grpc::ClientReaderWriter<HelloRequest, HelloReply> > stream(
       Greeter::NewStub(channel)->SayHelloStreaming(&context));
 
@@ -177,42 +196,14 @@ int main(int argc, char** argv) {
   if (!stream->Write(request)) {
     std::cout << "Error writing" << std::endl;
   }
-  // std::cout << "Sleeping for 5 seconds" << std::endl;
-  // std::this_thread::sleep_for(std::chrono::seconds(5));
   HelloReply reply;
   if (stream->Read(&reply)) {
     std::cout << "Got message " << reply.message() << std::endl;
   }
-
-
-   // std::this_thread::sleep_for(std::chrono::seconds(3));
-//  channel->EnterLame();
-//  streamer.join();
-//  exit(1);
-////  std::cout << "Done sleeping" << std::endl;
-////  std::string reply2 = greeter->SayHello("parent");
-////  std::cout << "Received: " << reply2 << std::endl;
-//  streamer.join();
-////  delete greeter;
-//
-//  std::cout << "Sleeping for 1 more second after join" << std::endl;
-//  std::this_thread::sleep_for(std::chrono::seconds(1));
-//  exit(0);
-  //grpc_shutdown();
-  //grpc_init();
-  //grpc_shutdown();
   std::cout << "Original process ID: " << ::getpid() << std::endl;
   if (fork() != 0) {
     std::cout << "Parent process ID: " << ::getpid() << std::endl;
     std::this_thread::sleep_for(std::chrono::seconds(2));
-    std::string parent_reply = greeter->SayHello("parent");
-    std::cout << "Parent received: " << parent_reply << std::endl;
-    //doRpc("parent");
-
-    int status;
-    pid_t pid = wait(&status);
-    std::cout << "(" << ::getpid() << ") Child process is done" << std::endl;
-
 
     stream->WritesDone();
     std::cout << "(parent) StreamingHello done" << std::endl;
@@ -225,54 +216,88 @@ int main(int argc, char** argv) {
       std::cout << grpcStatus.error_message() << std::endl;
       std::cout << grpcStatus.error_details() << std::endl;
     }
-    
-   streamer.join();
-   std::cout << "(" << ::getpid() << ") Streamer thread is done" << std::endl;
 
+    int status;
+    pid_t pid = wait(&status);
+    std::cout << "(" << ::getpid() << ") Child process is done" << std::endl;
   } else {
     std::cout << "Child process ID: " << ::getpid() << std::endl;
+    stream->WritesDone();
+    std::cout << "(child) StreamingHello done" << std::endl;
 
-    // std::string child_same_channel_reply = greeter->SayHello("child same channel");
-    // std::cout << "Child received: " << child_same_channel_reply << std::endl;
-    // child_same_channel_reply = greeter->SayHello("child same channel attempt 2");
-    // std::cout << "Child received: " << child_same_channel_reply << std::endl;
+    Status grpcStatus = stream->Finish();
+    std::cout << "(child) Status received" << std::endl;
+    if (!grpcStatus.ok()) {
+      std::cout << "(child) Streaming rpc failed." << std::endl;
+      std::cout << grpcStatus.error_code() << std::endl;
+      std::cout << grpcStatus.error_message() << std::endl;
+      std::cout << grpcStatus.error_details() << std::endl;
+    }
+  }
+}
 
+void reuseChannelInChild() {
+  std::shared_ptr<Channel> channel = grpc::CreateChannel(
+      "localhost:50051", grpc::InsecureChannelCredentials());
+  GreeterClient* greeter = new GreeterClient(channel);
+  std::string user("world2");
+  std::string replyStr = greeter->SayHello(user);
+  std::cout << "Greeter received: " << replyStr << std::endl;
 
-    // std::shared_ptr<Channel> child_channel = grpc::CreateChannel(
-    //   "localhost:50051", grpc::InsecureChannelCredentials());
-    // GreeterClient *child_greeter = new GreeterClient(child_channel);
-    // std::string child_reply = child_greeter->SayHello("parent");
+  std::thread streamer([greeter]() { greeter->StreamingHello(3, 3); });
 
-    // std::cout << "Child received: " << child_reply << std::endl;
-//    channel->EnterLame();
-    //std::cout << "Forked: " << greeter->SayHello("blah") << std::endl;
-    //gpr_setenv("GRPC_VERBOSITY", "DEBUG");
-    //gpr_setenv("GRPC_TRACE", "all");
-    //doRpcAndWait("child");
-
-
-    // stream->WritesDone();
-    // std::cout << "(child) StreamingHello done" << std::endl;
-
-    // Status grpcStatus = stream->Finish();
-    // std::cout << "(child) Status received" << std::endl;
-    // if (!grpcStatus.ok()) {
-    //   std::cout << "(child) Streaming rpc failed." << std::endl;
-    //   std::cout << grpcStatus.error_code() << std::endl;
-    //   std::cout << grpcStatus.error_message() << std::endl;
-    //   std::cout << grpcStatus.error_details() << std::endl;
-    // }
-
+  std::cout << "Original process ID: " << ::getpid() << std::endl;
+  if (fork() != 0) {
+    std::cout << "Parent process ID: " << ::getpid() << std::endl;
     std::this_thread::sleep_for(std::chrono::seconds(1));
-    doRpc("child");
-    std::this_thread::sleep_for(std::chrono::seconds(3));
-    doRpc("child again");
+    std::string parent_reply = greeter->SayHello("parent");
+    std::cout << "Parent received: " << parent_reply << std::endl;
 
+    int status;
+    pid_t pid = wait(&status);
+    std::cout << "(" << ::getpid() << ") Child process is done" << std::endl;
+
+    streamer.join();
+    std::cout << "(" << ::getpid() << ") Streamer thread is done" << std::endl;
+  } else {
+    std::cout << "Child process ID: " << ::getpid() << std::endl;
+    std::string child_same_channel_reply =
+        greeter->SayHello("child same channel");
+    std::cout << "Child received: " << child_same_channel_reply << std::endl;
+    std::this_thread::sleep_for(std::chrono::seconds(2));
+    child_same_channel_reply =
+        greeter->SayHello("child same channel attempt 2");
+    std::cout << "Child received: " << child_same_channel_reply << std::endl;
     streamer.detach();
   }
+}
 
-//  std::cout << "Forked: " << greeter.SayHello("blah") << std::endl;
+int main(int argc, char** argv) {
+  // Test cases:
+  //   keep_alive - pings shouldn't continue in child
+  //   new_channel_same_args - child should be able to create new channel
+  //     without using the same subchannel from parent
+  //   continue_call_in_child - should return error in child, succeed in parent
+  //   reuse_channel_in_child - should reconnect and succeed in child
 
+  std::string test_case;
+  if (argc > 0) {
+    test_case = argv[1];
+  }
 
-  return 0;
+  if (test_case == "keep_alive") {
+    std::cout << "Running test case keep_alive" << std::endl;
+    keepAlive();
+  } else if (test_case == "new_channel_same_args") {
+    std::cout << "Running test case new_channel_same_args" << std::endl;
+    newChannelSameArgs();
+  } else if (test_case == "continue_call_in_child") {
+    std::cout << "Running test case continue_call_in_child" << std::endl;
+    continueCallInChild();
+  } else if (test_case == "reuse_channel_in_child") {
+    std::cout << "Running test case reuse_channel_in_child" << std::endl;
+    reuseChannelInChild();
+  } else {
+    std::cout << "Unknown test case" << std::endl;
+  }
 }
