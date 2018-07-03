@@ -249,6 +249,8 @@ void continueCallInChild() {
 void reuseChannelInChild() {
   std::shared_ptr<Channel> channel = grpc::CreateChannel(
       "localhost:50051", grpc::InsecureChannelCredentials());
+    // std::this_thread::sleep_for(std::chrono::seconds(10));
+
   GreeterClient* greeter = new GreeterClient(channel);
   std::string user("world2");
   std::string replyStr = greeter->SayHello(user);

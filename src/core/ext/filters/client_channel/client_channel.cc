@@ -129,6 +129,8 @@ typedef struct client_channel_channel_data {
   char* info_lb_policy_name;
   /** service config in JSON form */
   char* info_service_config_json;
+
+  // int fork_epoch;
 } channel_data;
 
 typedef struct {
@@ -644,6 +646,7 @@ static grpc_error* cc_init_channel_elem(grpc_channel_element* elem,
                     on_resolver_result_changed_locked, chand,
                     grpc_combiner_scheduler(chand->combiner));
   chand->interested_parties = grpc_pollset_set_create();
+  // chand->fork_epoch = grpc_core::Fork::GetForkEpoch();
   grpc_connectivity_state_init(&chand->state_tracker, GRPC_CHANNEL_IDLE,
                                "client_channel");
   grpc_client_channel_start_backup_polling(chand->interested_parties);
@@ -2980,6 +2983,23 @@ static void start_pick_locked(void* arg, grpc_error* ignored) {
 // filter call vtable functions
 //
 
+// // TODO: only needed if in connected/connecting state already, not IDLE
+// static void move_channel_to_transient_failure_post_fork_locked(
+//     void* arg, grpc_error* error_ignored) {
+//   gpr_log(GPR_DEBUG, "move_channel_to_transient_failure_post_fork_locked actually ran");
+//   grpc_call_element* elem = static_cast<grpc_call_element*>(arg);
+//   channel_data* chand = static_cast<channel_data*>(elem->channel_data);
+//   if (chand->fork_epoch < grpc_core::Fork::GetForkEpoch()) {
+//     gpr_log(GPR_DEBUG,
+//             "channel data from old fork epoch, moving to TRANSIENT_FAILURE");
+//     set_channel_connectivity_state_locked(
+//         chand, GRPC_CHANNEL_TRANSIENT_FAILURE,
+//         GRPC_ERROR_CREATE_FROM_STATIC_STRING("Fork"),
+//         "move to transient failure after fork");
+//     chand->fork_epoch++;
+//   }
+// }
+
 static void cc_start_transport_stream_op_batch(
     grpc_call_element* elem, grpc_transport_stream_op_batch* batch) {
   GPR_TIMER_SCOPE("cc_start_transport_stream_op_batch", 0);
@@ -2999,6 +3019,15 @@ static void cc_start_transport_stream_op_batch(
         batch, GRPC_ERROR_REF(calld->cancel_error), calld->call_combiner);
     return;
   }
+
+  // if (GPR_UNLIKELY(chand->fork_epoch < grpc_core::Fork::GetForkEpoch())) {
+  //   gpr_log(GPR_ERROR, "Entering channel combiner to handle fork");
+  //   GRPC_CLOSURE_SCHED(
+  //       GRPC_CLOSURE_INIT(&batch->handler_private.closure,
+  //                         move_channel_to_transient_failure_post_fork_locked,
+  //                         elem, grpc_combiner_scheduler(chand->combiner)),
+  //       GRPC_ERROR_NONE);
+  // }
 
   if (GPR_UNLIKELY(calld->fork_epoch < grpc_core::Fork::GetForkEpoch())) {
     calld->cancel_error =
@@ -3096,6 +3125,7 @@ static grpc_error* cc_init_call_elem(grpc_call_element* elem,
                                      const grpc_call_element_args* args) {
   call_data* calld = static_cast<call_data*>(elem->call_data);
   channel_data* chand = static_cast<channel_data*>(elem->channel_data);
+
   // Initialize data members.
   calld->fork_epoch = grpc_core::Fork::GetForkEpoch();
   calld->path = grpc_slice_ref_internal(args->path);

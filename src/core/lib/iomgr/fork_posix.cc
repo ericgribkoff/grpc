@@ -98,6 +98,8 @@ void grpc_postfork_child() {
     grpc_core::Fork::AllowExecCtx();
     grpc_core::ExecCtx exec_ctx;
 
+    grpc_subchannel_index_disconnect_on_fork();
+
     grpc_event_engine_shutdown();
     grpc_event_engine_init();
     

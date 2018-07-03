@@ -320,14 +320,14 @@ grpc_subchannel* grpc_subchannel_create(grpc_connector* connector,
   grpc_subchannel_key* key = grpc_subchannel_key_create(args);
   grpc_subchannel* c = grpc_subchannel_index_find(key);
   if (c) {
-    if (c->fork_epoch < grpc_core::Fork::GetForkEpoch()) {
-      grpc_subchannel_index_unregister(key, c);
-      GRPC_SUBCHANNEL_UNREF(c, "new fork epoch");
-      c = nullptr;
-    } else {
+    // if (c->fork_epoch < grpc_core::Fork::GetForkEpoch()) {
+    //   grpc_subchannel_index_unregister(key, c);
+    //   GRPC_SUBCHANNEL_UNREF(c, "new fork epoch");
+    //   c = nullptr;
+    // } else {
       grpc_subchannel_key_destroy(key);
       return c;
-    }
+    // }
   }
 
   GRPC_STATS_INC_CLIENT_SUBCHANNELS_CREATED();
@@ -715,6 +715,12 @@ grpc_subchannel_get_connected_subchannel(grpc_subchannel* c) {
   return copy;
 }
 
+void grpc_subchannel_disconnect_due_to_fork(grpc_subchannel* c) {
+  if (c->connected_subchannel != nullptr) {
+    c->connected_subchannel->DisconnectDueToFork();
+  }
+}
+
 const grpc_subchannel_key* grpc_subchannel_get_key(
     const grpc_subchannel* subchannel) {
   return subchannel->key;
@@ -791,6 +797,15 @@ void ConnectedSubchannel::Ping(grpc_closure* on_initiate,
   grpc_channel_element* elem;
   op->send_ping.on_initiate = on_initiate;
   op->send_ping.on_ack = on_ack;
+  elem = grpc_channel_stack_element(channel_stack_, 0);
+  elem->filter->start_transport_op(elem, op);
+}
+
+void ConnectedSubchannel::DisconnectDueToFork() {
+  grpc_transport_op* op = grpc_make_transport_op(nullptr);
+  grpc_channel_element* elem;
+  op->disconnect_with_error =
+      GRPC_ERROR_CREATE_FROM_STATIC_STRING("Disconnected due to fork");
   elem = grpc_channel_stack_element(channel_stack_, 0);
   elem->filter->start_transport_op(elem, op);
 }
