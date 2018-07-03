@@ -46,10 +46,6 @@ class Fork {
   // Decrement the count of active ExecCtxs
   static void DecExecCtxCount();
 
-  static void AddFd(int fd);
-
-  static void CloseFds();
-
   static void IncrementForkEpoch();
 
   static int GetForkEpoch();
@@ -80,8 +76,6 @@ class Fork {
   static internal::ThreadState* threadState_;
   static bool supportEnabled_;
   static bool overrideEnabled_;
-  static int currentFdCount;
-  static int* openFds;
   static int forkEpoch;
 };
 

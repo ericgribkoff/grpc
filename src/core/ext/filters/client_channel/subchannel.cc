@@ -133,8 +133,6 @@ struct grpc_subchannel {
   bool backoff_begun;
   /** our alarm */
   grpc_timer alarm;
-
-  int fork_epoch;
 };
 
 struct grpc_subchannel_call {
@@ -320,14 +318,8 @@ grpc_subchannel* grpc_subchannel_create(grpc_connector* connector,
   grpc_subchannel_key* key = grpc_subchannel_key_create(args);
   grpc_subchannel* c = grpc_subchannel_index_find(key);
   if (c) {
-    // if (c->fork_epoch < grpc_core::Fork::GetForkEpoch()) {
-    //   grpc_subchannel_index_unregister(key, c);
-    //   GRPC_SUBCHANNEL_UNREF(c, "new fork epoch");
-    //   c = nullptr;
-    // } else {
-      grpc_subchannel_key_destroy(key);
-      return c;
-    // }
+    grpc_subchannel_key_destroy(key);
+    return c;
   }
 
   GRPC_STATS_INC_CLIENT_SUBCHANNELS_CREATED();
@@ -441,29 +433,23 @@ static void on_alarm(void* arg, grpc_error* error) {
 }
 
 static void maybe_start_connecting_locked(grpc_subchannel* c) {
-  gpr_log(GPR_DEBUG, "maybe_start_connecting_locked");
   if (c->disconnected) {
     /* Don't try to connect if we're already disconnected */
-    gpr_log(GPR_DEBUG, "already disconnected");
     return;
   }
 
   if (c->connecting) {
     /* Already connecting: don't restart */
-    gpr_log(GPR_DEBUG, "already connecting");
     return;
   }
 
   if (c->connected_subchannel != nullptr) {
     /* Already connected: don't restart */
-    gpr_log(GPR_DEBUG, "already connected");
     return;
   }
 
   if (!grpc_connectivity_state_has_watchers(&c->state_tracker)) {
     /* Nobody is interested in connecting: so don't just yet */
-    gpr_log(GPR_DEBUG, "no watchers");
-
     return;
   }
 

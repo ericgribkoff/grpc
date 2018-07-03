@@ -21,7 +21,6 @@
 #include "src/core/lib/gprpp/fork.h"
 
 #include <string.h>
-#include <unistd.h>
 
 #include <grpc/support/alloc.h>
 #include <grpc/support/log.h>
@@ -224,20 +223,6 @@ void Fork::DecExecCtxCount() {
   }
 }
 
-void Fork::AddFd(int fd) {
-  gpr_log(GPR_DEBUG, "Adding fd %d to global list", fd);
-  openFds[currentFdCount++] = fd;
-}
-
-void Fork::CloseFds() {
-  for (int i = 0; i < currentFdCount; i++) {
-    gpr_log(GPR_DEBUG, "Closing fd %d", openFds[i]);
-    close(openFds[i]);
-  }
-  currentFdCount = 0;
-  openFds = new int[100];
-}
-
 void Fork::IncrementForkEpoch() {
   forkEpoch++;
 }
@@ -280,8 +265,6 @@ internal::ExecCtxState* Fork::execCtxState_ = nullptr;
 internal::ThreadState* Fork::threadState_ = nullptr;
 bool Fork::supportEnabled_ = false;
 bool Fork::overrideEnabled_ = false;
-int Fork::currentFdCount = 0;
-int* Fork::openFds = new int[100];
 int Fork::forkEpoch = 0;
 
 }  // namespace grpc_core

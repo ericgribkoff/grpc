@@ -99,7 +99,6 @@ static callback_state* get_state_for_batch(
    into transport stream operations */
 static void con_start_transport_stream_op_batch(
     grpc_call_element* elem, grpc_transport_stream_op_batch* batch) {
-  gpr_log(GPR_ERROR, "passing stream_op batch to transport");
   call_data* calld = static_cast<call_data*>(elem->call_data);
   channel_data* chand = static_cast<channel_data*>(elem->channel_data);
   if (batch->recv_initial_metadata) {

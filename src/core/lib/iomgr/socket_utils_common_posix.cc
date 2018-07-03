@@ -43,7 +43,6 @@
 
 #include "src/core/lib/gpr/host_port.h"
 #include "src/core/lib/gpr/string.h"
-#include "src/core/lib/gprpp/fork.h"
 #include "src/core/lib/iomgr/sockaddr.h"
 #include "src/core/lib/iomgr/sockaddr_utils.h"
 
@@ -297,11 +296,9 @@ grpc_error* grpc_create_dualstack_socket(
 
 static int create_socket(grpc_socket_factory* factory, int domain, int type,
                          int protocol) {
-  int sockfd = (factory != nullptr)
+  return (factory != nullptr)
              ? grpc_socket_factory_socket(factory, domain, type, protocol)
              : socket(domain, type, protocol);
-  grpc_core::Fork::AddFd(sockfd); // TODO: error check
-  return sockfd;
 }
 
 grpc_error* grpc_create_dualstack_socket_using_factory(

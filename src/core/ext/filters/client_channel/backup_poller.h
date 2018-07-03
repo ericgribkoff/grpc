@@ -32,7 +32,4 @@ void grpc_client_channel_start_backup_polling(
 void grpc_client_channel_stop_backup_polling(
     grpc_pollset_set* interested_parties);
 
-/* Internal API for fork support */
-void grpc_backup_poller_reset_for_fork();
-
 #endif /* GRPC_CORE_EXT_FILTERS_CLIENT_CHANNEL_BACKUP_POLLER_H */

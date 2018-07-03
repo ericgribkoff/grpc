@@ -530,7 +530,6 @@ static grpc_error* pollable_create(pollable_type type, pollable** p) {
   if (epfd == -1) {
     return GRPC_OS_ERROR(errno, "epoll_create1");
   }
-  grpc_core::Fork::AddFd(epfd);
   GRPC_FD_TRACE("Pollable_create: created epfd: %d (type: %d)", epfd, type);
   *p = static_cast<pollable*>(gpr_malloc(sizeof(**p)));
   grpc_error* err = grpc_wakeup_fd_init(&(*p)->wakeup);
