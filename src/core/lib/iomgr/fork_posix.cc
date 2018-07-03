@@ -97,6 +97,10 @@ void grpc_postfork_child() {
     // grpc_core::Fork::CloseFds();
     grpc_core::Fork::AllowExecCtx();
     grpc_core::ExecCtx exec_ctx;
+
+    grpc_event_engine_shutdown();
+    grpc_event_engine_init();
+    
     // grpc_timer_list_init();
     // grpc_backup_poller_reset_for_fork();
     // grpc_subchannel_index_init();

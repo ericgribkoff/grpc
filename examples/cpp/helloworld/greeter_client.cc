@@ -154,8 +154,8 @@ int main(int argc, char** argv) {
   GreeterClient *greeter = new GreeterClient(channel);
   // for (int i = 0; i < 10; i++) {
   std::string user("world2");
-  std::string reply = greeter->SayHello(user);
-  std::cout << "Greeter received: " << reply << std::endl;
+  std::string replyStr = greeter->SayHello(user);
+  std::cout << "Greeter received: " << replyStr << std::endl;
   //   std::this_thread::sleep_for(std::chrono::seconds(15));
   // }
 
@@ -166,6 +166,24 @@ int main(int argc, char** argv) {
    std::thread streamer([greeter]() {
      greeter->StreamingHello();
    });
+
+  ClientContext context;
+
+  std::shared_ptr<grpc::ClientReaderWriter<HelloRequest, HelloReply> > stream(
+      Greeter::NewStub(channel)->SayHelloStreaming(&context));
+
+  HelloRequest request;
+  request.set_name("before fork stream");
+  if (!stream->Write(request)) {
+    std::cout << "Error writing" << std::endl;
+  }
+  // std::cout << "Sleeping for 5 seconds" << std::endl;
+  // std::this_thread::sleep_for(std::chrono::seconds(5));
+  HelloReply reply;
+  if (stream->Read(&reply)) {
+    std::cout << "Got message " << reply.message() << std::endl;
+  }
+
 
    // std::this_thread::sleep_for(std::chrono::seconds(3));
 //  channel->EnterLame();
@@ -190,12 +208,27 @@ int main(int argc, char** argv) {
     std::string parent_reply = greeter->SayHello("parent");
     std::cout << "Parent received: " << parent_reply << std::endl;
     //doRpc("parent");
-   streamer.join();
-   std::cout << "(" << ::getpid() << ") Streamer thread is done" << std::endl;
 
     int status;
     pid_t pid = wait(&status);
     std::cout << "(" << ::getpid() << ") Child process is done" << std::endl;
+
+
+    stream->WritesDone();
+    std::cout << "(parent) StreamingHello done" << std::endl;
+
+    Status grpcStatus = stream->Finish();
+    std::cout << "(parent) Status received" << std::endl;
+    if (!grpcStatus.ok()) {
+      std::cout << "(parent) Streaming rpc failed." << std::endl;
+      std::cout << grpcStatus.error_code() << std::endl;
+      std::cout << grpcStatus.error_message() << std::endl;
+      std::cout << grpcStatus.error_details() << std::endl;
+    }
+    
+   streamer.join();
+   std::cout << "(" << ::getpid() << ") Streamer thread is done" << std::endl;
+
   } else {
     std::cout << "Child process ID: " << ::getpid() << std::endl;
 
@@ -217,10 +250,24 @@ int main(int argc, char** argv) {
     //gpr_setenv("GRPC_TRACE", "all");
     //doRpcAndWait("child");
 
+
+    // stream->WritesDone();
+    // std::cout << "(child) StreamingHello done" << std::endl;
+
+    // Status grpcStatus = stream->Finish();
+    // std::cout << "(child) Status received" << std::endl;
+    // if (!grpcStatus.ok()) {
+    //   std::cout << "(child) Streaming rpc failed." << std::endl;
+    //   std::cout << grpcStatus.error_code() << std::endl;
+    //   std::cout << grpcStatus.error_message() << std::endl;
+    //   std::cout << grpcStatus.error_details() << std::endl;
+    // }
+
     std::this_thread::sleep_for(std::chrono::seconds(1));
     doRpc("child");
     std::this_thread::sleep_for(std::chrono::seconds(3));
     doRpc("child again");
+
     streamer.detach();
   }
 
