@@ -615,28 +615,28 @@ static grpc_error* pollable_add_fd(pollable* p, grpc_fd* fd) {
   static const char* err_desc = "pollable_add_fd";
 
   gpr_mu_lock(&p->mu);
-  // if (p->fork_epoch < grpc_core::Fork::GetForkEpoch()) {
-  //   gpr_log(GPR_ERROR, "replacing epfd");
-  //   close(p->epfd);
-  //   grpc_wakeup_fd_destroy(&(p->wakeup));
-  //   // TODO: error handling
-  //   p->epfd = epoll_create1(EPOLL_CLOEXEC);
-  //   gpr_log(GPR_ERROR, "new epfd: %d", p->epfd);
-  //   grpc_error* err = grpc_wakeup_fd_init(&(p->wakeup));
-  //   if (err != GRPC_ERROR_NONE) {
-  //     gpr_log(GPR_INFO, "error creating wakeup fd");
-  //   }
-  //   struct epoll_event ev;
-  //   ev.events = static_cast<uint32_t>(EPOLLIN | EPOLLET);
-  //   ev.data.ptr = (void*)(1 | (intptr_t) & p->wakeup);
-  //   epoll_ctl(p->epfd, EPOLL_CTL_ADD, p->wakeup.read_fd, &ev);
-  //   p->fork_epoch = grpc_core::Fork::GetForkEpoch();
-  //   p->fd_cache_counter = 0;
-  //   for (int i = 0; i < p->fd_cache_size; i++) {
-  //     p->fd_cache[i].fd = -1;
-  //   }
-  //   gpr_log(GPR_ERROR, "replaced epfd");
-  // }
+  if (p->fork_epoch < grpc_core::Fork::GetForkEpoch()) {
+    gpr_log(GPR_ERROR, "replacing epfd");
+    close(p->epfd);
+    grpc_wakeup_fd_destroy(&(p->wakeup));
+    // TODO: error handling
+    p->epfd = epoll_create1(EPOLL_CLOEXEC);
+    gpr_log(GPR_ERROR, "new epfd: %d", p->epfd);
+    grpc_error* err = grpc_wakeup_fd_init(&(p->wakeup));
+    if (err != GRPC_ERROR_NONE) {
+      gpr_log(GPR_INFO, "error creating wakeup fd");
+    }
+    struct epoll_event ev;
+    ev.events = static_cast<uint32_t>(EPOLLIN | EPOLLET);
+    ev.data.ptr = (void*)(1 | (intptr_t) & p->wakeup);
+    epoll_ctl(p->epfd, EPOLL_CTL_ADD, p->wakeup.read_fd, &ev);
+    p->fork_epoch = grpc_core::Fork::GetForkEpoch();
+    p->fd_cache_counter = 0;
+    for (int i = 0; i < p->fd_cache_size; i++) {
+      p->fd_cache[i].fd = -1;
+    }
+    gpr_log(GPR_ERROR, "replaced epfd");
+  }
 
   const int epfd = p->epfd;
   p->fd_cache_counter++;
@@ -1005,10 +1005,10 @@ static grpc_error* pollable_epoll(pollable* p, grpc_millis deadline) {
     gpr_free(desc);
   }
 
-  // if (p->fork_epoch < grpc_core::Fork::GetForkEpoch()) {
-  //   gpr_log(GPR_DEBUG, "skipping pollable_epoll due to fork epoch (may be invalid for P0?)");
-  //   return GRPC_ERROR_NONE;
-  // }
+  if (p->fork_epoch < grpc_core::Fork::GetForkEpoch()) {
+    gpr_log(GPR_DEBUG, "skipping pollable_epoll due to fork epoch (may be invalid for P0?)");
+    return GRPC_ERROR_NONE;
+  }
 
   if (timeout != 0) {
     GRPC_SCHEDULING_START_BLOCKING_REGION;

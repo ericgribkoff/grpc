@@ -269,27 +269,27 @@ void midCallRecovery() {
     std::cout << "Parent process ID: " << ::getpid() << std::endl;
     // std::this_thread::sleep_for(std::chrono::seconds(20));
 
-    // HelloRequest request2;
-    // request2.set_name("after fork stream");
-    // if (!stream->Write(request2)) {
-    //   std::cout << "Error writing" << std::endl;
-    // }
-    // HelloReply reply2;
-    // if (stream->Read(&reply2)) {
-    //   std::cout << "Got message " << reply2.message() << std::endl;
-    // }
+    HelloRequest request2;
+    request2.set_name("after fork stream");
+    if (!stream->Write(request2)) {
+      std::cout << "Error writing" << std::endl;
+    }
+    HelloReply reply2;
+    if (stream->Read(&reply2)) {
+      std::cout << "Got message " << reply2.message() << std::endl;
+    }
 
-    // stream->WritesDone();
-    // std::cout << "(parent) StreamingHello done" << std::endl;
+    stream->WritesDone();
+    std::cout << "(parent) StreamingHello done" << std::endl;
 
-    // Status grpcStatus = stream->Finish();
-    // std::cout << "(parent) Status received" << std::endl;
-    // if (!grpcStatus.ok()) {
-    //   std::cout << "(parent) Streaming rpc failed." << std::endl;
-    //   std::cout << grpcStatus.error_code() << std::endl;
-    //   std::cout << grpcStatus.error_message() << std::endl;
-    //   std::cout << grpcStatus.error_details() << std::endl;
-    // }
+    Status grpcStatus = stream->Finish();
+    std::cout << "(parent) Status received" << std::endl;
+    if (!grpcStatus.ok()) {
+      std::cout << "(parent) Streaming rpc failed." << std::endl;
+      std::cout << grpcStatus.error_code() << std::endl;
+      std::cout << grpcStatus.error_message() << std::endl;
+      std::cout << grpcStatus.error_details() << std::endl;
+    }
 
     int status;
     pid_t pid = wait(&status);
@@ -297,11 +297,11 @@ void midCallRecovery() {
   } else {
     std::cout << "Child process ID: " << ::getpid() << std::endl;
     std::cout << "blah" << std::endl;
-    if (stream->Read(&reply)) {
-      std::cout << "Got message " << reply.message() << std::endl;
-    } else {
-      std::cout << "No message" << std::endl;
-    }
+    // if (stream->Read(&reply)) {
+    //   std::cout << "Got message " << reply.message() << std::endl;
+    // } else {
+    //   std::cout << "No message" << std::endl;
+    // }
     // Segfaults for epollex. Not for epoll1.
     // Must be epoll_ctl a child fd onto a parent epfd?
     stream->WritesDone();
