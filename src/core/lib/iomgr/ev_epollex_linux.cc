@@ -450,6 +450,7 @@ static int fd_wrapped_fd(grpc_fd* fd) {
 static void fd_orphan(grpc_fd* fd, grpc_closure* on_done, int* release_fd,
                       const char* reason) {
   bool is_fd_closed = false;
+  gpr_log(GPR_DEBUG, "fd_orphan: %p (%d)", fd, fd->fd);
 
   gpr_mu_lock(&fd->orphan_mu);
 
@@ -490,10 +491,12 @@ static bool fd_is_shutdown(grpc_fd* fd) {
 
 /* Might be called multiple times */
 static void fd_shutdown(grpc_fd* fd, grpc_error* why) {
+  gpr_log(GPR_ERROR, "Shutting down fd %d",
+                  grpc_fd_wrapped_fd(fd));
   if (fd->read_closure->SetShutdown(GRPC_ERROR_REF(why))) {
     if (fd->fork_epoch < grpc_core::Fork::GetForkEpoch()) {
       gpr_log(GPR_ERROR, "skipping shutdown due to old fork epoch");
-      gpr_log(GPR_ERROR, "result of close: %d", close(fd->fd));
+      // gpr_log(GPR_ERROR, "result of close: %d", close(fd->fd));
     } else {
       if (shutdown(fd->fd, SHUT_RDWR)) {
         if (errno != ENOTCONN) {
@@ -649,6 +652,7 @@ static grpc_error* pollable_add_fd(pollable* p, grpc_fd* fd) {
   int lru_idx = 0;
   for (int i = 0; i < p->fd_cache_size; i++) {
     if (p->fd_cache[i].fd == fd->fd && p->fd_cache[i].salt == fd->salt) {
+      gpr_log(GPR_DEBUG, "fd cached, returning");
       GRPC_STATS_INC_POLLSET_FD_CACHE_HITS();
       p->fd_cache[i].last_used = p->fd_cache_counter;
       gpr_mu_unlock(&p->mu);
@@ -965,9 +969,9 @@ static grpc_error* pollable_process_events(grpc_pollset* pollset,
 
       if (grpc_polling_trace.enabled()) {
         gpr_log(GPR_INFO,
-                "PS:%p got fd %p: cancel=%d read=%d "
+                "PS:%p got fd %p (%d): cancel=%d read=%d "
                 "write=%d",
-                pollset, fd, cancel, read_ev, write_ev);
+                pollset, fd, fd->fd, cancel, read_ev, write_ev);
       }
       if (error && !err_fallback) {
         fd_has_errors(fd);
