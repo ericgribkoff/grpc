@@ -496,7 +496,7 @@ static void fd_shutdown(grpc_fd* fd, grpc_error* why) {
   if (fd->read_closure->SetShutdown(GRPC_ERROR_REF(why))) {
     if (fd->fork_epoch < grpc_core::Fork::GetForkEpoch()) {
       gpr_log(GPR_ERROR, "skipping shutdown due to old fork epoch");
-      // gpr_log(GPR_ERROR, "result of close: %d", close(fd->fd));
+      gpr_log(GPR_ERROR, "result of close: %d", close(fd->fd));
     } else {
       if (shutdown(fd->fd, SHUT_RDWR)) {
         if (errno != ENOTCONN) {
@@ -636,6 +636,11 @@ static grpc_error* pollable_add_fd(pollable* p, grpc_fd* fd) {
       p->fd_cache[i].fd = -1;
     }
     gpr_log(GPR_ERROR, "replaced epfd");
+  }
+
+  if (fd->fork_epoch < grpc_core::Fork::GetForkEpoch()) {
+    gpr_log(GPR_ERROR, "adding inherited fd to epfd!");
+    return error;
   }
 
   const int epfd = p->epfd;

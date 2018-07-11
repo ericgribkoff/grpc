@@ -77,8 +77,8 @@ void grpc_postfork_parent() {
   if (!skipped_handler) {
     grpc_core::Fork::AllowExecCtx();
     grpc_core::ExecCtx exec_ctx;
-    // grpc_timer_manager_set_threading(true);
-    // grpc_executor_set_threading(true);
+    grpc_timer_manager_set_threading(true);
+    grpc_executor_set_threading(true);
   }
 }
 
@@ -90,7 +90,7 @@ void grpc_postfork_child() {
     grpc_subchannel_index_disconnect_on_fork();
     grpc_event_engine_shutdown();
     grpc_event_engine_init();
-    // grpc_timer_manager_set_threading(true);
+    grpc_timer_manager_set_threading(true);
     grpc_executor_set_threading(true);
   }
 }
