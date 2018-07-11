@@ -398,6 +398,7 @@ grpc_connectivity_state grpc_subchannel_check_connectivity(grpc_subchannel* c,
 static void on_external_state_watcher_done(void* arg, grpc_error* error) {
   external_state_watcher* w = static_cast<external_state_watcher*>(arg);
   grpc_closure* follow_up = w->notify;
+  gpr_log(GPR_DEBUG, "on_external_state_watcher_done");
   if (w->pollset_set != nullptr) {
     grpc_pollset_set_del_pollset_set(w->subchannel->pollset_set,
                                      w->pollset_set);
@@ -498,6 +499,7 @@ void grpc_subchannel_notify_on_state_change(
     GRPC_CLOSURE_INIT(&w->closure, on_external_state_watcher_done, w,
                       grpc_schedule_on_exec_ctx);
     if (interested_parties != nullptr) {
+      gpr_log(GPR_DEBUG, "Adding interested parties");
       grpc_pollset_set_add_pollset_set(c->pollset_set, interested_parties);
     }
     GRPC_SUBCHANNEL_WEAK_REF(c, "external_state_watcher");

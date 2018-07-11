@@ -398,6 +398,7 @@ bool SubchannelData<SubchannelListType,
 template <typename SubchannelListType, typename SubchannelDataType>
 void SubchannelData<SubchannelListType, SubchannelDataType>::
     OnConnectivityChangedLocked(void* arg, grpc_error* error) {
+  gpr_log(GPR_ERROR, "OnConnectivityChangedLocked");
   SubchannelData* sd = static_cast<SubchannelData*>(arg);
   if (sd->subchannel_list_->tracer()->enabled()) {
     gpr_log(

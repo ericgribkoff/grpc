@@ -590,6 +590,7 @@ static void close_transport_locked(grpc_chttp2_transport* t,
       }
       t->close_transport_on_writes_finished =
           grpc_error_add_child(t->close_transport_on_writes_finished, error);
+      gpr_log(GPR_ERROR, "Delayed close due to in-progress write");
       return;
     }
     GPR_ASSERT(error != GRPC_ERROR_NONE);
@@ -815,6 +816,7 @@ static void set_write_state(grpc_chttp2_transport* t,
   if (st == GRPC_CHTTP2_WRITE_STATE_IDLE) {
     GRPC_CLOSURE_LIST_SCHED(&t->run_after_write);
     if (t->close_transport_on_writes_finished != nullptr) {
+      gpr_log(GPR_DEBUG, "Actually closing transport now that writes finished, %s", reason);
       grpc_error* err = t->close_transport_on_writes_finished;
       t->close_transport_on_writes_finished = nullptr;
       close_transport_locked(t, err);
@@ -2156,6 +2158,7 @@ void grpc_chttp2_mark_stream_closed(grpc_chttp2_transport* t,
     grpc_chttp2_fail_pending_writes(t, s, GRPC_ERROR_REF(error));
   }
   if (s->read_closed && s->write_closed) {
+    gpr_log(GPR_ERROR, "Stream removed");
     became_closed = true;
     grpc_error* overall_error =
         removal_error(GRPC_ERROR_REF(error), s, "Stream removed");

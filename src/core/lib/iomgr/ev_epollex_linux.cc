@@ -610,17 +610,32 @@ static void pollable_unref(pollable* p, int line, const char* reason) {
 static grpc_error* pollable_add_fd(pollable* p, grpc_fd* fd) {
   grpc_error* error = GRPC_ERROR_NONE;
   static const char* err_desc = "pollable_add_fd";
-  const int epfd = p->epfd;
-
-  if (p->fork_epoch < grpc_core::Fork::GetForkEpoch()) {
-    append_error(
-        &error,
-        GRPC_ERROR_CREATE_FROM_STATIC_STRING("Adding fd to inherited pollable"),
-        err_desc);
-    return error;
-  }
 
   gpr_mu_lock(&p->mu);
+  // if (p->fork_epoch < grpc_core::Fork::GetForkEpoch()) {
+  //   gpr_log(GPR_ERROR, "replacing epfd");
+  //   close(p->epfd);
+  //   grpc_wakeup_fd_destroy(&(p->wakeup));
+  //   // TODO: error handling
+  //   p->epfd = epoll_create1(EPOLL_CLOEXEC);
+  //   gpr_log(GPR_ERROR, "new epfd: %d", p->epfd);
+  //   grpc_error* err = grpc_wakeup_fd_init(&(p->wakeup));
+  //   if (err != GRPC_ERROR_NONE) {
+  //     gpr_log(GPR_INFO, "error creating wakeup fd");
+  //   }
+  //   struct epoll_event ev;
+  //   ev.events = static_cast<uint32_t>(EPOLLIN | EPOLLET);
+  //   ev.data.ptr = (void*)(1 | (intptr_t) & p->wakeup);
+  //   epoll_ctl(p->epfd, EPOLL_CTL_ADD, p->wakeup.read_fd, &ev);
+  //   p->fork_epoch = grpc_core::Fork::GetForkEpoch();
+  //   p->fd_cache_counter = 0;
+  //   for (int i = 0; i < p->fd_cache_size; i++) {
+  //     p->fd_cache[i].fd = -1;
+  //   }
+  //   gpr_log(GPR_ERROR, "replaced epfd");
+  // }
+
+  const int epfd = p->epfd;
   p->fd_cache_counter++;
 
   // Handle the case of overflow for our cache counter by
@@ -691,6 +706,7 @@ GPR_TLS_DECL(g_current_thread_worker);
 static grpc_error* pollset_global_init(void) {
   gpr_tls_init(&g_current_thread_pollset);
   gpr_tls_init(&g_current_thread_worker);
+  gpr_log(GPR_DEBUG, "creating new pollset_global_init");
   return pollable_create(PO_EMPTY, &g_empty_pollable);
 }
 
@@ -985,17 +1001,25 @@ static grpc_error* pollable_epoll(pollable* p, grpc_millis deadline) {
     gpr_free(desc);
   }
 
+  // if (p->fork_epoch < grpc_core::Fork::GetForkEpoch()) {
+  //   gpr_log(GPR_DEBUG, "skipping pollable_epoll due to fork epoch (may be invalid for P0?)");
+  //   return GRPC_ERROR_NONE;
+  // }
+
   if (timeout != 0) {
     GRPC_SCHEDULING_START_BLOCKING_REGION;
   }
   int r;
   do {
     GRPC_STATS_INC_SYSCALL_POLL();
+    gpr_log(GPR_DEBUG, "invoking epoll_wait");
     r = epoll_wait(p->epfd, p->events, MAX_EPOLL_EVENTS, timeout);
   } while (r < 0 && errno == EINTR);
   if (timeout != 0) {
     GRPC_SCHEDULING_END_BLOCKING_REGION;
   }
+
+  gpr_log(GPR_DEBUG, "r: %d", r);
 
   if (r < 0) return GRPC_OS_ERROR(errno, "epoll_wait");
 
@@ -1170,10 +1194,10 @@ static grpc_error* pollset_work(grpc_pollset* pollset,
             deadline, pollset->kicked_without_poller, pollset->active_pollable);
   }
 
-  if (pollset->fork_epoch < grpc_core::Fork::GetForkEpoch()) {
-    gpr_log(GPR_ERROR, "fork epoch > 0");
-    return GRPC_ERROR_NONE;
-  }
+  // if (pollset->fork_epoch < grpc_core::Fork::GetForkEpoch()) {
+  //   gpr_log(GPR_ERROR, "fork epoch > 0");
+  //   return GRPC_ERROR_NONE;
+  // }
 
   static const char* err_desc = "pollset_work";
   grpc_error* error = GRPC_ERROR_NONE;
@@ -1521,13 +1545,18 @@ static void pollset_set_add_pollset_set(grpc_pollset_set* a,
     gpr_log(GPR_INFO, "PSS: merge (%p, %p)", a, b);
   }
   grpc_error* error = GRPC_ERROR_NONE;
+
   static const char* err_desc = "pollset_set_add_fd";
   for (;;) {
+    gpr_log(GPR_DEBUG, "iteration");
     if (a == b) {
+      gpr_log(GPR_DEBUG, "same ancestor, nothing to do");
       // pollset ancestors are the same: nothing to do
       return;
     }
     if (a > b) {
+      // ???
+      gpr_log(GPR_DEBUG, "swapping");
       GPR_SWAP(grpc_pollset_set*, a, b);
     }
     gpr_mu* a_mu = &a->mu;

@@ -266,6 +266,8 @@ struct grpc_call {
     For 1, 4: See receiving_initial_metadata_ready() function
     For 2, 3: See receiving_stream_ready() function */
   gpr_atm recv_state;
+
+  int fork_epoch;
 };
 
 grpc_core::TraceFlag grpc_call_error_trace(false, "call_error");
@@ -356,6 +358,7 @@ grpc_error* grpc_call_create(const grpc_call_create_args* args,
       gpr_arena_alloc(arena, ROUND_UP_TO_ALIGNMENT_SIZE(sizeof(grpc_call)) +
                                  channel_stack->call_stack_size));
   gpr_ref_init(&call->ext_ref, 1);
+  call->fork_epoch = grpc_core::Fork::GetForkEpoch();
   call->arena = arena;
   grpc_call_combiner_init(&call->call_combiner);
   *out_call = call;
@@ -639,6 +642,7 @@ static void execute_batch_in_call_combiner(void* arg, grpc_error* ignored) {
   grpc_call* call = static_cast<grpc_call*>(batch->handler_private.extra_arg);
   grpc_call_element* elem = CALL_ELEM_FROM_CALL(call, 0);
   GRPC_CALL_LOG_OP(GPR_INFO, elem, batch);
+  gpr_log(GPR_DEBUG, "execute_batch_in_call_combiner");
   elem->filter->start_transport_stream_op_batch(elem, batch);
 }
 
@@ -1593,7 +1597,14 @@ static grpc_call_error call_start_batch(grpc_call* call, const grpc_op* ops,
   grpc_transport_stream_op_batch* stream_op;
   grpc_transport_stream_op_batch_payload* stream_op_payload;
 
-  GRPC_CALL_LOG_BATCH(GPR_INFO, call, ops, nops, notify_tag);
+  // GRPC_CALL_LOG_BATCH(GPR_INFO, call, ops, nops, notify_tag);
+  grpc_call_log_batch(GPR_ERROR, call, ops, nops, notify_tag);
+
+  // if (call->fork_epoch < grpc_core::Fork::GetForkEpoch()) {
+  //   gpr_log(GPR_DEBUG, "old call");
+  //   error = grpc_call_cancel(call, nullptr);
+  //   goto done;
+  // }
 
   if (nops == 0) {
     if (!is_notify_tag_closure) {
@@ -1725,6 +1736,7 @@ static grpc_call_error call_start_batch(grpc_call* call, const grpc_op* ops,
         stream_op_payload->send_message.send_message.reset(
             call->sending_stream.get());
         has_send_ops = true;
+        gpr_log(GPR_ERROR, "has_send_ops = true");
         break;
       }
       case GRPC_OP_SEND_CLOSE_FROM_CLIENT: {
@@ -1943,6 +1955,7 @@ static grpc_call_error call_start_batch(grpc_call* call, const grpc_op* ops,
     stream_op->on_complete = &bctl->finish_batch;
   }
 
+  gpr_log(GPR_DEBUG, "execute_batch invoked");
   gpr_atm_rel_store(&call->any_ops_sent_atm, 1);
   execute_batch(call, stream_op, &bctl->start_batch);
 
