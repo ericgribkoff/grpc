@@ -146,10 +146,6 @@ static void on_writable(void* acp, grpc_error* error) {
             str);
   }
 
-  if (ep != nullptr && (*ep) != nullptr) {
-  gpr_log(GPR_ERROR, "endpoint->fork_epoch: %d", (**ep).fork_epoch);
-}
-
   gpr_mu_lock(&ac->mu);
   GPR_ASSERT(ac->fd);
   fd = ac->fd;

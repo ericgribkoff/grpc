@@ -958,8 +958,6 @@ typedef struct client_channel_call_data {
   bool seen_send_trailing_metadata;
   grpc_linked_mdelem* send_trailing_metadata_storage;
   grpc_metadata_batch send_trailing_metadata;
-
-  int fork_epoch;
 } call_data;
 
 // Forward declarations.
@@ -2997,7 +2995,6 @@ static void start_pick_locked(void* arg, grpc_error* ignored) {
 
 static void cc_start_transport_stream_op_batch(
     grpc_call_element* elem, grpc_transport_stream_op_batch* batch) {
-  gpr_log(GPR_DEBUG, "cc_start_transport_stream_op_batch");
   GPR_TIMER_SCOPE("cc_start_transport_stream_op_batch", 0);
   call_data* calld = static_cast<call_data*>(elem->call_data);
   channel_data* chand = static_cast<channel_data*>(elem->channel_data);
@@ -3006,44 +3003,15 @@ static void cc_start_transport_stream_op_batch(
   }
   // If we've previously been cancelled, immediately fail any new batches.
   if (GPR_UNLIKELY(calld->cancel_error != GRPC_ERROR_NONE)) {
-    // if (grpc_client_channel_trace.enabled()) {
+    if (grpc_client_channel_trace.enabled()) {
       gpr_log(GPR_INFO, "chand=%p calld=%p: failing batch with error: %s",
               chand, calld, grpc_error_string(calld->cancel_error));
-    // }
+    }
     // Note: This will release the call combiner.
     grpc_transport_stream_op_batch_finish_with_failure(
         batch, GRPC_ERROR_REF(calld->cancel_error), calld->call_combiner);
     return;
   }
-
-  // if (!batch->cancel_stream && GPR_UNLIKELY(calld->fork_epoch < grpc_core::Fork::GetForkEpoch())) {
-  //     batch->cancel_stream = true;
-  //     batch->payload->cancel_stream.cancel_error = GRPC_ERROR_CREATE_FROM_STATIC_STRING("Fork caused call cancellation");
-  //     gpr_log(GPR_DEBUG, "Setting batch cancel stream due to fork");
-  //   // calld->cancel_error =
-  //   //     GRPC_ERROR_CREATE_FROM_STATIC_STRING("Fork caused call cancellation");
-  //   // // if (grpc_client_channel_trace.enabled()) {
-  //   //   gpr_log(GPR_INFO, "chand=%p calld=%p: recording cancel_error=%s", chand,
-  //   //           calld, grpc_error_string(calld->cancel_error));
-  //   // // }
-  //   // // If we do not have a subchannel call (i.e., a pick has not yet
-  //   // // been started), fail all pending batches.  Otherwise, send the
-  //   // // cancellation down to the subchannel call.
-  //   // if (calld->subchannel_call == nullptr) {
-  //   //   pending_batches_fail(elem, GRPC_ERROR_REF(calld->cancel_error),
-  //   //                        false /* yield_call_combiner */);
-  //   //   // Note: This will release the call combiner.
-  //   //   grpc_transport_stream_op_batch_finish_with_failure(
-  //   //       batch, GRPC_ERROR_REF(calld->cancel_error), calld->call_combiner);
-  //   // } else {
-  //   //   gpr_log(GPR_DEBUG, "call_process_op");
-  //   //   // Note: This will release the call combiner.
-  //   //   // TODO: This doesn't cancel because batch doesn't have any cancellation data
-  //   //   grpc_subchannel_call_process_op(calld->subchannel_call, batch);
-  //   // }
-  //   // return;
-  // }
-
   // Handle cancellation.
   if (GPR_UNLIKELY(batch->cancel_stream)) {
     // Stash a copy of cancel_error in our call data, so that we can use
@@ -3117,9 +3085,7 @@ static grpc_error* cc_init_call_elem(grpc_call_element* elem,
                                      const grpc_call_element_args* args) {
   call_data* calld = static_cast<call_data*>(elem->call_data);
   channel_data* chand = static_cast<channel_data*>(elem->channel_data);
-
   // Initialize data members.
-  calld->fork_epoch = grpc_core::Fork::GetForkEpoch();
   calld->path = grpc_slice_ref_internal(args->path);
   calld->call_start_time = args->start_time;
   calld->deadline = args->deadline;
