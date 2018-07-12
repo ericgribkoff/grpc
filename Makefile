@@ -300,6 +300,12 @@ else
 TMPOUT = `mktemp /tmp/test-out-XXXXXX`
 endif
 
+CHECK_NO_CXX14_COMPAT_WORKS_CMD = $(CC) -std=c++11 -Werror -Wno-c++14-compat -o $(TMPOUT) -c test/build/no-c++14-compat.cc
+HAS_WORKING_NO_CXX14_COMPAT = $(shell $(CHECK_NO_CXX14_COMPAT_WORKS_CMD) 2> /dev/null && echo true || echo false)
+ifeq ($(HAS_WORKING_NO_CXX14_COMPAT),true)
+W_NO_CXX14_COMPAT=-Wno-c++14-compat
+endif
+
 CHECK_SHADOW_WORKS_CMD = $(CC) -std=c99 -Werror -Wshadow -o $(TMPOUT) -c test/build/shadow.c
 HAS_WORKING_SHADOW = $(shell $(CHECK_SHADOW_WORKS_CMD) 2> /dev/null && echo true || echo false)
 ifeq ($(HAS_WORKING_SHADOW),true)
@@ -317,6 +323,18 @@ HAS_WORKING_NO_SHIFT_NEGATIVE_VALUE = $(shell $(CHECK_NO_SHIFT_NEGATIVE_VALUE_WO
 ifeq ($(HAS_WORKING_NO_SHIFT_NEGATIVE_VALUE),true)
 W_NO_SHIFT_NEGATIVE_VALUE=-Wno-shift-negative-value
 NO_W_NO_SHIFT_NEGATIVE_VALUE=-Wshift-negative-value
+endif
+CHECK_NO_UNUSED_BUT_SET_VARIABLE_WORKS_CMD = $(CC) -std=c99 -Werror -Wno-unused-but-set-variable -o $(TMPOUT) -c test/build/no-unused-but-set-variable.c
+HAS_WORKING_NO_UNUSED_BUT_SET_VARIABLE = $(shell $(CHECK_NO_UNUSED_BUT_SET_VARIABLE_WORKS_CMD) 2> /dev/null && echo true || echo false)
+ifeq ($(HAS_WORKING_NO_UNUSED_BUT_SET_VARIABLE),true)
+W_NO_UNUSED_BUT_SET_VARIABLE=-Wno-unused-but-set-variable
+NO_W_NO_UNUSED_BUT_SET_VARIABLE=-Wunused-but-set-variable
+endif
+CHECK_NO_MAYBE_UNINITIALIZED_WORKS_CMD = $(CC) -std=c99 -Werror -Wno-maybe-uninitialized -o $(TMPOUT) -c test/build/no-maybe-uninitialized.c
+HAS_WORKING_NO_MAYBE_UNINITIALIZED = $(shell $(CHECK_NO_MAYBE_UNINITIALIZED_WORKS_CMD) 2> /dev/null && echo true || echo false)
+ifeq ($(HAS_WORKING_NO_MAYBE_UNINITIALIZED),true)
+W_NO_MAYBE_UNINITIALIZED=-Wno-maybe-uninitialized
+NO_W_NO_MAYBE_UNINITIALIZED=-Wmaybe-uninitialized
 endif
 
 # The HOST compiler settings are used to compile the protoc plugins.
@@ -968,6 +986,7 @@ dns_resolver_test: $(BINDIR)/$(CONFIG)/dns_resolver_test
 dualstack_socket_test: $(BINDIR)/$(CONFIG)/dualstack_socket_test
 endpoint_pair_test: $(BINDIR)/$(CONFIG)/endpoint_pair_test
 error_test: $(BINDIR)/$(CONFIG)/error_test
+ev_epollex_linux_test: $(BINDIR)/$(CONFIG)/ev_epollex_linux_test
 ev_epollsig_linux_test: $(BINDIR)/$(CONFIG)/ev_epollsig_linux_test
 fake_resolver_test: $(BINDIR)/$(CONFIG)/fake_resolver_test
 fake_transport_security_test: $(BINDIR)/$(CONFIG)/fake_transport_security_test
@@ -1180,6 +1199,7 @@ qps_interarrival_test: $(BINDIR)/$(CONFIG)/qps_interarrival_test
 qps_json_driver: $(BINDIR)/$(CONFIG)/qps_json_driver
 qps_openloop_test: $(BINDIR)/$(CONFIG)/qps_openloop_test
 qps_worker: $(BINDIR)/$(CONFIG)/qps_worker
+raw_end2end_test: $(BINDIR)/$(CONFIG)/raw_end2end_test
 reconnect_interop_client: $(BINDIR)/$(CONFIG)/reconnect_interop_client
 reconnect_interop_server: $(BINDIR)/$(CONFIG)/reconnect_interop_server
 ref_counted_ptr_test: $(BINDIR)/$(CONFIG)/ref_counted_ptr_test
@@ -1285,6 +1305,7 @@ h2_full+pipe_test: $(BINDIR)/$(CONFIG)/h2_full+pipe_test
 h2_full+trace_test: $(BINDIR)/$(CONFIG)/h2_full+trace_test
 h2_full+workarounds_test: $(BINDIR)/$(CONFIG)/h2_full+workarounds_test
 h2_http_proxy_test: $(BINDIR)/$(CONFIG)/h2_http_proxy_test
+h2_local_test: $(BINDIR)/$(CONFIG)/h2_local_test
 h2_oauth2_test: $(BINDIR)/$(CONFIG)/h2_oauth2_test
 h2_proxy_test: $(BINDIR)/$(CONFIG)/h2_proxy_test
 h2_sockpair_test: $(BINDIR)/$(CONFIG)/h2_sockpair_test
@@ -1371,7 +1392,7 @@ plugins: $(PROTOC_PLUGINS)
 
 privatelibs: privatelibs_c privatelibs_cxx
 
-privatelibs_c:  $(LIBDIR)/$(CONFIG)/libalts_test_util.a $(LIBDIR)/$(CONFIG)/libgpr_test_util.a $(LIBDIR)/$(CONFIG)/libgrpc_test_util.a $(LIBDIR)/$(CONFIG)/libgrpc_test_util_unsecure.a $(LIBDIR)/$(CONFIG)/libreconnect_server.a $(LIBDIR)/$(CONFIG)/libtest_tcp_server.a $(LIBDIR)/$(CONFIG)/libz.a $(LIBDIR)/$(CONFIG)/libares.a $(LIBDIR)/$(CONFIG)/libbad_client_test.a $(LIBDIR)/$(CONFIG)/libbad_ssl_test_server.a $(LIBDIR)/$(CONFIG)/libend2end_tests.a $(LIBDIR)/$(CONFIG)/libend2end_nosec_tests.a
+privatelibs_c:  $(LIBDIR)/$(CONFIG)/libalts_test_util.a $(LIBDIR)/$(CONFIG)/libcxxabi.a $(LIBDIR)/$(CONFIG)/libgpr_test_util.a $(LIBDIR)/$(CONFIG)/libgrpc_test_util.a $(LIBDIR)/$(CONFIG)/libgrpc_test_util_unsecure.a $(LIBDIR)/$(CONFIG)/libreconnect_server.a $(LIBDIR)/$(CONFIG)/libtest_tcp_server.a $(LIBDIR)/$(CONFIG)/libz.a $(LIBDIR)/$(CONFIG)/libares.a $(LIBDIR)/$(CONFIG)/libbad_client_test.a $(LIBDIR)/$(CONFIG)/libbad_ssl_test_server.a $(LIBDIR)/$(CONFIG)/libend2end_tests.a $(LIBDIR)/$(CONFIG)/libend2end_nosec_tests.a
 pc_c: $(LIBDIR)/$(CONFIG)/pkgconfig/grpc.pc
 
 pc_c_unsecure: $(LIBDIR)/$(CONFIG)/pkgconfig/grpc_unsecure.pc
@@ -1413,6 +1434,7 @@ buildtests_c: privatelibs_c \
   $(BINDIR)/$(CONFIG)/dualstack_socket_test \
   $(BINDIR)/$(CONFIG)/endpoint_pair_test \
   $(BINDIR)/$(CONFIG)/error_test \
+  $(BINDIR)/$(CONFIG)/ev_epollex_linux_test \
   $(BINDIR)/$(CONFIG)/ev_epollsig_linux_test \
   $(BINDIR)/$(CONFIG)/fake_resolver_test \
   $(BINDIR)/$(CONFIG)/fake_transport_security_test \
@@ -1538,6 +1560,7 @@ buildtests_c: privatelibs_c \
   $(BINDIR)/$(CONFIG)/h2_full+trace_test \
   $(BINDIR)/$(CONFIG)/h2_full+workarounds_test \
   $(BINDIR)/$(CONFIG)/h2_http_proxy_test \
+  $(BINDIR)/$(CONFIG)/h2_local_test \
   $(BINDIR)/$(CONFIG)/h2_oauth2_test \
   $(BINDIR)/$(CONFIG)/h2_proxy_test \
   $(BINDIR)/$(CONFIG)/h2_sockpair_test \
@@ -1667,6 +1690,7 @@ buildtests_cxx: privatelibs_cxx \
   $(BINDIR)/$(CONFIG)/qps_json_driver \
   $(BINDIR)/$(CONFIG)/qps_openloop_test \
   $(BINDIR)/$(CONFIG)/qps_worker \
+  $(BINDIR)/$(CONFIG)/raw_end2end_test \
   $(BINDIR)/$(CONFIG)/reconnect_interop_client \
   $(BINDIR)/$(CONFIG)/reconnect_interop_server \
   $(BINDIR)/$(CONFIG)/ref_counted_ptr_test \
@@ -1844,6 +1868,7 @@ buildtests_cxx: privatelibs_cxx \
   $(BINDIR)/$(CONFIG)/qps_json_driver \
   $(BINDIR)/$(CONFIG)/qps_openloop_test \
   $(BINDIR)/$(CONFIG)/qps_worker \
+  $(BINDIR)/$(CONFIG)/raw_end2end_test \
   $(BINDIR)/$(CONFIG)/reconnect_interop_client \
   $(BINDIR)/$(CONFIG)/reconnect_interop_server \
   $(BINDIR)/$(CONFIG)/ref_counted_ptr_test \
@@ -1934,6 +1959,8 @@ test_c: buildtests_c
 	$(Q) $(BINDIR)/$(CONFIG)/endpoint_pair_test || ( echo test endpoint_pair_test failed ; exit 1 )
 	$(E) "[RUN]     Testing error_test"
 	$(Q) $(BINDIR)/$(CONFIG)/error_test || ( echo test error_test failed ; exit 1 )
+	$(E) "[RUN]     Testing ev_epollex_linux_test"
+	$(Q) $(BINDIR)/$(CONFIG)/ev_epollex_linux_test || ( echo test ev_epollex_linux_test failed ; exit 1 )
 	$(E) "[RUN]     Testing ev_epollsig_linux_test"
 	$(Q) $(BINDIR)/$(CONFIG)/ev_epollsig_linux_test || ( echo test ev_epollsig_linux_test failed ; exit 1 )
 	$(E) "[RUN]     Testing fake_resolver_test"
@@ -2312,6 +2339,8 @@ test_cxx: buildtests_cxx
 	$(Q) $(BINDIR)/$(CONFIG)/proto_utils_test || ( echo test proto_utils_test failed ; exit 1 )
 	$(E) "[RUN]     Testing qps_openloop_test"
 	$(Q) $(BINDIR)/$(CONFIG)/qps_openloop_test || ( echo test qps_openloop_test failed ; exit 1 )
+	$(E) "[RUN]     Testing raw_end2end_test"
+	$(Q) $(BINDIR)/$(CONFIG)/raw_end2end_test || ( echo test raw_end2end_test failed ; exit 1 )
 	$(E) "[RUN]     Testing ref_counted_ptr_test"
 	$(Q) $(BINDIR)/$(CONFIG)/ref_counted_ptr_test || ( echo test ref_counted_ptr_test failed ; exit 1 )
 	$(E) "[RUN]     Testing ref_counted_test"
@@ -2855,6 +2884,11 @@ $(OBJDIR)/$(CONFIG)/%.o : %.cc
 	$(Q) mkdir -p `dirname $@`
 	$(Q) $(CXX) $(CPPFLAGS) $(CXXFLAGS) -MMD -MF $(addsuffix .dep, $(basename $@)) -c -o $@ $<
 
+$(OBJDIR)/$(CONFIG)/%.o : %.cpp
+	$(E) "[CXX]     Compiling $<"
+	$(Q) mkdir -p `dirname $@`
+	$(Q) $(CXX) $(CPPFLAGS) $(CXXFLAGS) -MMD -MF $(addsuffix .dep, $(basename $@)) -c -o $@ $<
+
 install: install_c install_cxx install-plugins install-certs
 
 install_c: install-headers_c install-static_c install-shared_c
@@ -3169,6 +3203,50 @@ endif
 endif
 
 
+LIBCXXABI_SRC = \
+    third_party/libcxxabi/src/abort_message.cpp \
+    third_party/libcxxabi/src/cxa_aux_runtime.cpp \
+    third_party/libcxxabi/src/cxa_default_handlers.cpp \
+    third_party/libcxxabi/src/cxa_demangle.cpp \
+    third_party/libcxxabi/src/cxa_exception_storage.cpp \
+    third_party/libcxxabi/src/cxa_guard.cpp \
+    third_party/libcxxabi/src/cxa_handlers.cpp \
+    third_party/libcxxabi/src/cxa_noexception.cpp \
+    third_party/libcxxabi/src/cxa_thread_atexit.cpp \
+    third_party/libcxxabi/src/cxa_unexpected.cpp \
+    third_party/libcxxabi/src/cxa_vector.cpp \
+    third_party/libcxxabi/src/cxa_virtual.cpp \
+    third_party/libcxxabi/src/fallback_malloc.cpp \
+    third_party/libcxxabi/src/private_typeinfo.cpp \
+    third_party/libcxxabi/src/stdlib_exception.cpp \
+    third_party/libcxxabi/src/stdlib_new_delete.cpp \
+    third_party/libcxxabi/src/stdlib_stdexcept.cpp \
+    third_party/libcxxabi/src/stdlib_typeinfo.cpp \
+
+PUBLIC_HEADERS_C += \
+
+LIBCXXABI_OBJS = $(addprefix $(OBJDIR)/$(CONFIG)/, $(addsuffix .o, $(basename $(LIBCXXABI_SRC))))
+
+$(LIBCXXABI_OBJS): CPPFLAGS += -D_LIBCPP_DISABLE_EXTERN_TEMPLATE -D_LIBCXXABI_BUILDING_LIBRARY -D_LIBCXXABI_NO_EXCEPTIONS -Ithird_party/libcxxabi/include -nostdinc++ -Ithird_party/libcxx/include $(W_NO_UNUSED_BUT_SET_VARIABLE) $(W_NO_MAYBE_UNINITIALIZED) -fvisibility=hidden
+$(LIBCXXABI_OBJS): CXXFLAGS += $(W_NO_CXX14_COMPAT)
+
+$(LIBDIR)/$(CONFIG)/libcxxabi.a: $(ZLIB_DEP) $(CARES_DEP) $(ADDRESS_SORTING_DEP)  $(LIBCXXABI_OBJS) 
+	$(E) "[AR]      Creating $@"
+	$(Q) mkdir -p `dirname $@`
+	$(Q) rm -f $(LIBDIR)/$(CONFIG)/libcxxabi.a
+	$(Q) $(AR) $(AROPTS) $(LIBDIR)/$(CONFIG)/libcxxabi.a $(LIBCXXABI_OBJS) 
+ifeq ($(SYSTEM),Darwin)
+	$(Q) ranlib -no_warning_for_no_symbols $(LIBDIR)/$(CONFIG)/libcxxabi.a
+endif
+
+
+
+
+ifneq ($(NO_DEPS),true)
+-include $(LIBCXXABI_OBJS:.o=.dep)
+endif
+
+
 LIBGPR_SRC = \
     src/core/lib/gpr/alloc.cc \
     src/core/lib/gpr/arena.cc \
@@ -3235,6 +3313,7 @@ PUBLIC_HEADERS_C += \
     include/grpc/impl/codegen/fork.h \
     include/grpc/impl/codegen/gpr_slice.h \
     include/grpc/impl/codegen/gpr_types.h \
+    include/grpc/impl/codegen/log.h \
     include/grpc/impl/codegen/port_platform.h \
     include/grpc/impl/codegen/sync.h \
     include/grpc/impl/codegen/sync_custom.h \
@@ -3497,10 +3576,12 @@ LIBGRPC_SRC = \
     src/core/lib/security/credentials/jwt/json_token.cc \
     src/core/lib/security/credentials/jwt/jwt_credentials.cc \
     src/core/lib/security/credentials/jwt/jwt_verifier.cc \
+    src/core/lib/security/credentials/local/local_credentials.cc \
     src/core/lib/security/credentials/oauth2/oauth2_credentials.cc \
     src/core/lib/security/credentials/plugin/plugin_credentials.cc \
     src/core/lib/security/credentials/ssl/ssl_credentials.cc \
     src/core/lib/security/security_connector/alts_security_connector.cc \
+    src/core/lib/security/security_connector/local_security_connector.cc \
     src/core/lib/security/security_connector/security_connector.cc \
     src/core/lib/security/transport/client_auth_filter.cc \
     src/core/lib/security/transport/secure_endpoint.cc \
@@ -3552,6 +3633,7 @@ LIBGRPC_SRC = \
     src/core/ext/filters/client_channel/backup_poller.cc \
     src/core/ext/filters/client_channel/channel_connectivity.cc \
     src/core/ext/filters/client_channel/client_channel.cc \
+    src/core/ext/filters/client_channel/client_channel_channelz.cc \
     src/core/ext/filters/client_channel/client_channel_factory.cc \
     src/core/ext/filters/client_channel/client_channel_plugin.cc \
     src/core/ext/filters/client_channel/connector.cc \
@@ -3573,6 +3655,7 @@ LIBGRPC_SRC = \
     src/core/ext/filters/deadline/deadline_filter.cc \
     src/core/tsi/alts_transport_security.cc \
     src/core/tsi/fake_transport_security.cc \
+    src/core/tsi/local_transport_security.cc \
     src/core/tsi/ssl/session_cache/ssl_session_boringssl.cc \
     src/core/tsi/ssl/session_cache/ssl_session_cache.cc \
     src/core/tsi/ssl/session_cache/ssl_session_openssl.cc \
@@ -3626,6 +3709,7 @@ PUBLIC_HEADERS_C += \
     include/grpc/impl/codegen/fork.h \
     include/grpc/impl/codegen/gpr_slice.h \
     include/grpc/impl/codegen/gpr_types.h \
+    include/grpc/impl/codegen/log.h \
     include/grpc/impl/codegen/port_platform.h \
     include/grpc/impl/codegen/sync.h \
     include/grpc/impl/codegen/sync_custom.h \
@@ -3640,6 +3724,7 @@ PUBLIC_HEADERS_C += \
     include/grpc/grpc.h \
     include/grpc/grpc_posix.h \
     include/grpc/grpc_security_constants.h \
+    include/grpc/load_reporting.h \
     include/grpc/slice.h \
     include/grpc/slice_buffer.h \
     include/grpc/status.h \
@@ -3884,6 +3969,7 @@ LIBGRPC_CRONET_SRC = \
     src/core/ext/filters/client_channel/backup_poller.cc \
     src/core/ext/filters/client_channel/channel_connectivity.cc \
     src/core/ext/filters/client_channel/client_channel.cc \
+    src/core/ext/filters/client_channel/client_channel_channelz.cc \
     src/core/ext/filters/client_channel/client_channel_factory.cc \
     src/core/ext/filters/client_channel/client_channel_plugin.cc \
     src/core/ext/filters/client_channel/connector.cc \
@@ -3916,10 +4002,12 @@ LIBGRPC_CRONET_SRC = \
     src/core/lib/security/credentials/jwt/json_token.cc \
     src/core/lib/security/credentials/jwt/jwt_credentials.cc \
     src/core/lib/security/credentials/jwt/jwt_verifier.cc \
+    src/core/lib/security/credentials/local/local_credentials.cc \
     src/core/lib/security/credentials/oauth2/oauth2_credentials.cc \
     src/core/lib/security/credentials/plugin/plugin_credentials.cc \
     src/core/lib/security/credentials/ssl/ssl_credentials.cc \
     src/core/lib/security/security_connector/alts_security_connector.cc \
+    src/core/lib/security/security_connector/local_security_connector.cc \
     src/core/lib/security/security_connector/security_connector.cc \
     src/core/lib/security/transport/client_auth_filter.cc \
     src/core/lib/security/transport/secure_endpoint.cc \
@@ -3970,6 +4058,7 @@ LIBGRPC_CRONET_SRC = \
     src/core/ext/transport/chttp2/client/chttp2_connector.cc \
     src/core/tsi/alts_transport_security.cc \
     src/core/tsi/fake_transport_security.cc \
+    src/core/tsi/local_transport_security.cc \
     src/core/tsi/ssl/session_cache/ssl_session_boringssl.cc \
     src/core/tsi/ssl/session_cache/ssl_session_cache.cc \
     src/core/tsi/ssl/session_cache/ssl_session_openssl.cc \
@@ -3993,6 +4082,7 @@ PUBLIC_HEADERS_C += \
     include/grpc/impl/codegen/fork.h \
     include/grpc/impl/codegen/gpr_slice.h \
     include/grpc/impl/codegen/gpr_types.h \
+    include/grpc/impl/codegen/log.h \
     include/grpc/impl/codegen/port_platform.h \
     include/grpc/impl/codegen/sync.h \
     include/grpc/impl/codegen/sync_custom.h \
@@ -4236,6 +4326,7 @@ LIBGRPC_TEST_UTIL_SRC = \
     src/core/ext/filters/client_channel/backup_poller.cc \
     src/core/ext/filters/client_channel/channel_connectivity.cc \
     src/core/ext/filters/client_channel/client_channel.cc \
+    src/core/ext/filters/client_channel/client_channel_channelz.cc \
     src/core/ext/filters/client_channel/client_channel_factory.cc \
     src/core/ext/filters/client_channel/client_channel_plugin.cc \
     src/core/ext/filters/client_channel/connector.cc \
@@ -4308,6 +4399,7 @@ PUBLIC_HEADERS_C += \
     include/grpc/impl/codegen/fork.h \
     include/grpc/impl/codegen/gpr_slice.h \
     include/grpc/impl/codegen/gpr_types.h \
+    include/grpc/impl/codegen/log.h \
     include/grpc/impl/codegen/port_platform.h \
     include/grpc/impl/codegen/sync.h \
     include/grpc/impl/codegen/sync_custom.h \
@@ -4533,6 +4625,7 @@ LIBGRPC_TEST_UTIL_UNSECURE_SRC = \
     src/core/ext/filters/client_channel/backup_poller.cc \
     src/core/ext/filters/client_channel/channel_connectivity.cc \
     src/core/ext/filters/client_channel/client_channel.cc \
+    src/core/ext/filters/client_channel/client_channel_channelz.cc \
     src/core/ext/filters/client_channel/client_channel_factory.cc \
     src/core/ext/filters/client_channel/client_channel_plugin.cc \
     src/core/ext/filters/client_channel/connector.cc \
@@ -4605,6 +4698,7 @@ PUBLIC_HEADERS_C += \
     include/grpc/impl/codegen/fork.h \
     include/grpc/impl/codegen/gpr_slice.h \
     include/grpc/impl/codegen/gpr_types.h \
+    include/grpc/impl/codegen/log.h \
     include/grpc/impl/codegen/port_platform.h \
     include/grpc/impl/codegen/sync.h \
     include/grpc/impl/codegen/sync_custom.h \
@@ -4830,6 +4924,7 @@ LIBGRPC_UNSECURE_SRC = \
     src/core/ext/filters/client_channel/backup_poller.cc \
     src/core/ext/filters/client_channel/channel_connectivity.cc \
     src/core/ext/filters/client_channel/client_channel.cc \
+    src/core/ext/filters/client_channel/client_channel_channelz.cc \
     src/core/ext/filters/client_channel/client_channel_factory.cc \
     src/core/ext/filters/client_channel/client_channel_plugin.cc \
     src/core/ext/filters/client_channel/connector.cc \
@@ -4896,6 +4991,7 @@ PUBLIC_HEADERS_C += \
     include/grpc/impl/codegen/fork.h \
     include/grpc/impl/codegen/gpr_slice.h \
     include/grpc/impl/codegen/gpr_types.h \
+    include/grpc/impl/codegen/log.h \
     include/grpc/impl/codegen/port_platform.h \
     include/grpc/impl/codegen/sync.h \
     include/grpc/impl/codegen/sync_custom.h \
@@ -4909,6 +5005,7 @@ PUBLIC_HEADERS_C += \
     include/grpc/grpc.h \
     include/grpc/grpc_posix.h \
     include/grpc/grpc_security_constants.h \
+    include/grpc/load_reporting.h \
     include/grpc/slice.h \
     include/grpc/slice_buffer.h \
     include/grpc/status.h \
@@ -5191,6 +5288,7 @@ PUBLIC_HEADERS_CXX += \
     include/grpc/impl/codegen/fork.h \
     include/grpc/impl/codegen/gpr_slice.h \
     include/grpc/impl/codegen/gpr_types.h \
+    include/grpc/impl/codegen/log.h \
     include/grpc/impl/codegen/port_platform.h \
     include/grpc/impl/codegen/sync.h \
     include/grpc/impl/codegen/sync_custom.h \
@@ -5204,6 +5302,7 @@ PUBLIC_HEADERS_CXX += \
     include/grpc/grpc.h \
     include/grpc/grpc_posix.h \
     include/grpc/grpc_security_constants.h \
+    include/grpc/load_reporting.h \
     include/grpc/slice.h \
     include/grpc/slice_buffer.h \
     include/grpc/status.h \
@@ -5246,6 +5345,7 @@ PUBLIC_HEADERS_CXX += \
     include/grpc++/impl/codegen/stub_options.h \
     include/grpc++/impl/codegen/sync_stream.h \
     include/grpc++/impl/codegen/time.h \
+    include/grpcpp/impl/codegen/async_generic_service.h \
     include/grpcpp/impl/codegen/async_stream.h \
     include/grpcpp/impl/codegen/async_unary_call.h \
     include/grpcpp/impl/codegen/byte_buffer.h \
@@ -5620,6 +5720,7 @@ LIBGRPC++_CRONET_SRC = \
     src/core/ext/filters/client_channel/backup_poller.cc \
     src/core/ext/filters/client_channel/channel_connectivity.cc \
     src/core/ext/filters/client_channel/client_channel.cc \
+    src/core/ext/filters/client_channel/client_channel_channelz.cc \
     src/core/ext/filters/client_channel/client_channel_factory.cc \
     src/core/ext/filters/client_channel/client_channel_plugin.cc \
     src/core/ext/filters/client_channel/connector.cc \
@@ -5761,6 +5862,7 @@ PUBLIC_HEADERS_CXX += \
     include/grpc/impl/codegen/fork.h \
     include/grpc/impl/codegen/gpr_slice.h \
     include/grpc/impl/codegen/gpr_types.h \
+    include/grpc/impl/codegen/log.h \
     include/grpc/impl/codegen/port_platform.h \
     include/grpc/impl/codegen/sync.h \
     include/grpc/impl/codegen/sync_custom.h \
@@ -5774,6 +5876,7 @@ PUBLIC_HEADERS_CXX += \
     include/grpc/grpc.h \
     include/grpc/grpc_posix.h \
     include/grpc/grpc_security_constants.h \
+    include/grpc/load_reporting.h \
     include/grpc/slice.h \
     include/grpc/slice_buffer.h \
     include/grpc/status.h \
@@ -5816,6 +5919,7 @@ PUBLIC_HEADERS_CXX += \
     include/grpc++/impl/codegen/stub_options.h \
     include/grpc++/impl/codegen/sync_stream.h \
     include/grpc++/impl/codegen/time.h \
+    include/grpcpp/impl/codegen/async_generic_service.h \
     include/grpcpp/impl/codegen/async_stream.h \
     include/grpcpp/impl/codegen/async_unary_call.h \
     include/grpcpp/impl/codegen/byte_buffer.h \
@@ -6205,6 +6309,7 @@ PUBLIC_HEADERS_CXX += \
     include/grpc++/impl/codegen/stub_options.h \
     include/grpc++/impl/codegen/sync_stream.h \
     include/grpc++/impl/codegen/time.h \
+    include/grpcpp/impl/codegen/async_generic_service.h \
     include/grpcpp/impl/codegen/async_stream.h \
     include/grpcpp/impl/codegen/async_unary_call.h \
     include/grpcpp/impl/codegen/byte_buffer.h \
@@ -6250,6 +6355,7 @@ PUBLIC_HEADERS_CXX += \
     include/grpc/impl/codegen/fork.h \
     include/grpc/impl/codegen/gpr_slice.h \
     include/grpc/impl/codegen/gpr_types.h \
+    include/grpc/impl/codegen/log.h \
     include/grpc/impl/codegen/port_platform.h \
     include/grpc/impl/codegen/sync.h \
     include/grpc/impl/codegen/sync_custom.h \
@@ -6357,6 +6463,7 @@ PUBLIC_HEADERS_CXX += \
     include/grpc++/impl/codegen/stub_options.h \
     include/grpc++/impl/codegen/sync_stream.h \
     include/grpc++/impl/codegen/time.h \
+    include/grpcpp/impl/codegen/async_generic_service.h \
     include/grpcpp/impl/codegen/async_stream.h \
     include/grpcpp/impl/codegen/async_unary_call.h \
     include/grpcpp/impl/codegen/byte_buffer.h \
@@ -6402,6 +6509,7 @@ PUBLIC_HEADERS_CXX += \
     include/grpc/impl/codegen/fork.h \
     include/grpc/impl/codegen/gpr_slice.h \
     include/grpc/impl/codegen/gpr_types.h \
+    include/grpc/impl/codegen/log.h \
     include/grpc/impl/codegen/port_platform.h \
     include/grpc/impl/codegen/sync.h \
     include/grpc/impl/codegen/sync_custom.h \
@@ -6620,6 +6728,7 @@ PUBLIC_HEADERS_CXX += \
     include/grpc/impl/codegen/fork.h \
     include/grpc/impl/codegen/gpr_slice.h \
     include/grpc/impl/codegen/gpr_types.h \
+    include/grpc/impl/codegen/log.h \
     include/grpc/impl/codegen/port_platform.h \
     include/grpc/impl/codegen/sync.h \
     include/grpc/impl/codegen/sync_custom.h \
@@ -6633,6 +6742,7 @@ PUBLIC_HEADERS_CXX += \
     include/grpc/grpc.h \
     include/grpc/grpc_posix.h \
     include/grpc/grpc_security_constants.h \
+    include/grpc/load_reporting.h \
     include/grpc/slice.h \
     include/grpc/slice_buffer.h \
     include/grpc/status.h \
@@ -6675,6 +6785,7 @@ PUBLIC_HEADERS_CXX += \
     include/grpc++/impl/codegen/stub_options.h \
     include/grpc++/impl/codegen/sync_stream.h \
     include/grpc++/impl/codegen/time.h \
+    include/grpcpp/impl/codegen/async_generic_service.h \
     include/grpcpp/impl/codegen/async_stream.h \
     include/grpcpp/impl/codegen/async_unary_call.h \
     include/grpcpp/impl/codegen/byte_buffer.h \
@@ -10994,6 +11105,38 @@ deps_error_test: $(ERROR_TEST_OBJS:.o=.dep)
 ifneq ($(NO_SECURE),true)
 ifneq ($(NO_DEPS),true)
 -include $(ERROR_TEST_OBJS:.o=.dep)
+endif
+endif
+
+
+EV_EPOLLEX_LINUX_TEST_SRC = \
+    test/core/iomgr/ev_epollex_linux_test.cc \
+
+EV_EPOLLEX_LINUX_TEST_OBJS = $(addprefix $(OBJDIR)/$(CONFIG)/, $(addsuffix .o, $(basename $(EV_EPOLLEX_LINUX_TEST_SRC))))
+ifeq ($(NO_SECURE),true)
+
+# You can't build secure targets if you don't have OpenSSL.
+
+$(BINDIR)/$(CONFIG)/ev_epollex_linux_test: openssl_dep_error
+
+else
+
+
+
+$(BINDIR)/$(CONFIG)/ev_epollex_linux_test: $(EV_EPOLLEX_LINUX_TEST_OBJS) $(LIBDIR)/$(CONFIG)/libgrpc_test_util.a $(LIBDIR)/$(CONFIG)/libgrpc.a $(LIBDIR)/$(CONFIG)/libgpr_test_util.a $(LIBDIR)/$(CONFIG)/libgpr.a
+	$(E) "[LD]      Linking $@"
+	$(Q) mkdir -p `dirname $@`
+	$(Q) $(LD) $(LDFLAGS) $(EV_EPOLLEX_LINUX_TEST_OBJS) $(LIBDIR)/$(CONFIG)/libgrpc_test_util.a $(LIBDIR)/$(CONFIG)/libgrpc.a $(LIBDIR)/$(CONFIG)/libgpr_test_util.a $(LIBDIR)/$(CONFIG)/libgpr.a $(LDLIBS) $(LDLIBS_SECURE) -o $(BINDIR)/$(CONFIG)/ev_epollex_linux_test
+
+endif
+
+$(OBJDIR)/$(CONFIG)/test/core/iomgr/ev_epollex_linux_test.o:  $(LIBDIR)/$(CONFIG)/libgrpc_test_util.a $(LIBDIR)/$(CONFIG)/libgrpc.a $(LIBDIR)/$(CONFIG)/libgpr_test_util.a $(LIBDIR)/$(CONFIG)/libgpr.a
+
+deps_ev_epollex_linux_test: $(EV_EPOLLEX_LINUX_TEST_OBJS:.o=.dep)
+
+ifneq ($(NO_SECURE),true)
+ifneq ($(NO_DEPS),true)
+-include $(EV_EPOLLEX_LINUX_TEST_OBJS:.o=.dep)
 endif
 endif
 
@@ -18834,6 +18977,49 @@ endif
 endif
 
 
+RAW_END2END_TEST_SRC = \
+    test/cpp/end2end/raw_end2end_test.cc \
+
+RAW_END2END_TEST_OBJS = $(addprefix $(OBJDIR)/$(CONFIG)/, $(addsuffix .o, $(basename $(RAW_END2END_TEST_SRC))))
+ifeq ($(NO_SECURE),true)
+
+# You can't build secure targets if you don't have OpenSSL.
+
+$(BINDIR)/$(CONFIG)/raw_end2end_test: openssl_dep_error
+
+else
+
+
+
+
+ifeq ($(NO_PROTOBUF),true)
+
+# You can't build the protoc plugins or protobuf-enabled targets if you don't have protobuf 3.5.0+.
+
+$(BINDIR)/$(CONFIG)/raw_end2end_test: protobuf_dep_error
+
+else
+
+$(BINDIR)/$(CONFIG)/raw_end2end_test: $(PROTOBUF_DEP) $(RAW_END2END_TEST_OBJS) $(LIBDIR)/$(CONFIG)/libgrpc++_test_util.a $(LIBDIR)/$(CONFIG)/libgrpc_test_util.a $(LIBDIR)/$(CONFIG)/libgrpc++.a $(LIBDIR)/$(CONFIG)/libgrpc.a $(LIBDIR)/$(CONFIG)/libgpr_test_util.a $(LIBDIR)/$(CONFIG)/libgpr.a
+	$(E) "[LD]      Linking $@"
+	$(Q) mkdir -p `dirname $@`
+	$(Q) $(LDXX) $(LDFLAGS) $(RAW_END2END_TEST_OBJS) $(LIBDIR)/$(CONFIG)/libgrpc++_test_util.a $(LIBDIR)/$(CONFIG)/libgrpc_test_util.a $(LIBDIR)/$(CONFIG)/libgrpc++.a $(LIBDIR)/$(CONFIG)/libgrpc.a $(LIBDIR)/$(CONFIG)/libgpr_test_util.a $(LIBDIR)/$(CONFIG)/libgpr.a $(LDLIBSXX) $(LDLIBS_PROTOBUF) $(LDLIBS) $(LDLIBS_SECURE) $(GTEST_LIB) -o $(BINDIR)/$(CONFIG)/raw_end2end_test
+
+endif
+
+endif
+
+$(OBJDIR)/$(CONFIG)/test/cpp/end2end/raw_end2end_test.o:  $(LIBDIR)/$(CONFIG)/libgrpc++_test_util.a $(LIBDIR)/$(CONFIG)/libgrpc_test_util.a $(LIBDIR)/$(CONFIG)/libgrpc++.a $(LIBDIR)/$(CONFIG)/libgrpc.a $(LIBDIR)/$(CONFIG)/libgpr_test_util.a $(LIBDIR)/$(CONFIG)/libgpr.a
+
+deps_raw_end2end_test: $(RAW_END2END_TEST_OBJS:.o=.dep)
+
+ifneq ($(NO_SECURE),true)
+ifneq ($(NO_DEPS),true)
+-include $(RAW_END2END_TEST_OBJS:.o=.dep)
+endif
+endif
+
+
 RECONNECT_INTEROP_CLIENT_SRC = \
     $(GENDIR)/src/proto/grpc/testing/empty.pb.cc $(GENDIR)/src/proto/grpc/testing/empty.grpc.pb.cc \
     $(GENDIR)/src/proto/grpc/testing/messages.pb.cc $(GENDIR)/src/proto/grpc/testing/messages.grpc.pb.cc \
@@ -22848,6 +23034,38 @@ endif
 endif
 
 
+H2_LOCAL_TEST_SRC = \
+    test/core/end2end/fixtures/h2_local.cc \
+
+H2_LOCAL_TEST_OBJS = $(addprefix $(OBJDIR)/$(CONFIG)/, $(addsuffix .o, $(basename $(H2_LOCAL_TEST_SRC))))
+ifeq ($(NO_SECURE),true)
+
+# You can't build secure targets if you don't have OpenSSL.
+
+$(BINDIR)/$(CONFIG)/h2_local_test: openssl_dep_error
+
+else
+
+
+
+$(BINDIR)/$(CONFIG)/h2_local_test: $(H2_LOCAL_TEST_OBJS) $(LIBDIR)/$(CONFIG)/libend2end_tests.a $(LIBDIR)/$(CONFIG)/libgrpc_test_util.a $(LIBDIR)/$(CONFIG)/libgrpc.a $(LIBDIR)/$(CONFIG)/libgpr_test_util.a $(LIBDIR)/$(CONFIG)/libgpr.a
+	$(E) "[LD]      Linking $@"
+	$(Q) mkdir -p `dirname $@`
+	$(Q) $(LD) $(LDFLAGS) $(H2_LOCAL_TEST_OBJS) $(LIBDIR)/$(CONFIG)/libend2end_tests.a $(LIBDIR)/$(CONFIG)/libgrpc_test_util.a $(LIBDIR)/$(CONFIG)/libgrpc.a $(LIBDIR)/$(CONFIG)/libgpr_test_util.a $(LIBDIR)/$(CONFIG)/libgpr.a $(LDLIBS) $(LDLIBS_SECURE) -o $(BINDIR)/$(CONFIG)/h2_local_test
+
+endif
+
+$(OBJDIR)/$(CONFIG)/test/core/end2end/fixtures/h2_local.o:  $(LIBDIR)/$(CONFIG)/libend2end_tests.a $(LIBDIR)/$(CONFIG)/libgrpc_test_util.a $(LIBDIR)/$(CONFIG)/libgrpc.a $(LIBDIR)/$(CONFIG)/libgpr_test_util.a $(LIBDIR)/$(CONFIG)/libgpr.a
+
+deps_h2_local_test: $(H2_LOCAL_TEST_OBJS:.o=.dep)
+
+ifneq ($(NO_SECURE),true)
+ifneq ($(NO_DEPS),true)
+-include $(H2_LOCAL_TEST_OBJS:.o=.dep)
+endif
+endif
+
+
 H2_OAUTH2_TEST_SRC = \
     test/core/end2end/fixtures/h2_oauth2.cc \
 
@@ -24241,10 +24459,12 @@ src/core/lib/security/credentials/iam/iam_credentials.cc: $(OPENSSL_DEP)
 src/core/lib/security/credentials/jwt/json_token.cc: $(OPENSSL_DEP)
 src/core/lib/security/credentials/jwt/jwt_credentials.cc: $(OPENSSL_DEP)
 src/core/lib/security/credentials/jwt/jwt_verifier.cc: $(OPENSSL_DEP)
+src/core/lib/security/credentials/local/local_credentials.cc: $(OPENSSL_DEP)
 src/core/lib/security/credentials/oauth2/oauth2_credentials.cc: $(OPENSSL_DEP)
 src/core/lib/security/credentials/plugin/plugin_credentials.cc: $(OPENSSL_DEP)
 src/core/lib/security/credentials/ssl/ssl_credentials.cc: $(OPENSSL_DEP)
 src/core/lib/security/security_connector/alts_security_connector.cc: $(OPENSSL_DEP)
+src/core/lib/security/security_connector/local_security_connector.cc: $(OPENSSL_DEP)
 src/core/lib/security/security_connector/security_connector.cc: $(OPENSSL_DEP)
 src/core/lib/security/transport/client_auth_filter.cc: $(OPENSSL_DEP)
 src/core/lib/security/transport/secure_endpoint.cc: $(OPENSSL_DEP)
@@ -24282,6 +24502,7 @@ src/core/tsi/alts/zero_copy_frame_protector/alts_iovec_record_protocol.cc: $(OPE
 src/core/tsi/alts/zero_copy_frame_protector/alts_zero_copy_grpc_protector.cc: $(OPENSSL_DEP)
 src/core/tsi/alts_transport_security.cc: $(OPENSSL_DEP)
 src/core/tsi/fake_transport_security.cc: $(OPENSSL_DEP)
+src/core/tsi/local_transport_security.cc: $(OPENSSL_DEP)
 src/core/tsi/ssl/session_cache/ssl_session_boringssl.cc: $(OPENSSL_DEP)
 src/core/tsi/ssl/session_cache/ssl_session_cache.cc: $(OPENSSL_DEP)
 src/core/tsi/ssl/session_cache/ssl_session_openssl.cc: $(OPENSSL_DEP)
