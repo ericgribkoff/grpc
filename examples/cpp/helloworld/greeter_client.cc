@@ -266,17 +266,17 @@ void midCallRecovery() {
   }
   std::cout << "Original process ID: " << ::getpid() << std::endl;
   if (fork() != 0) {
-    std::cout << "Parent process ID: " << ::getpid() << std::endl;
+    std::cout << "(parent) Parent process ID: " << ::getpid() << std::endl;
     // std::this_thread::sleep_for(std::chrono::seconds(20));
 
     HelloRequest request2;
     request2.set_name("after fork stream");
     if (!stream->Write(request2)) {
-      std::cout << "Error writing" << std::endl;
+      std::cout << "(parent) Error writing" << std::endl;
     }
     HelloReply reply2;
     if (stream->Read(&reply2)) {
-      std::cout << "Got message " << reply2.message() << std::endl;
+      std::cout << "(parent) Got message " << reply2.message() << std::endl;
     }
 
     stream->WritesDone();
@@ -295,8 +295,8 @@ void midCallRecovery() {
     pid_t pid = wait(&status);
     std::cout << "(" << ::getpid() << ") Child process is done " << status << std::endl;
   } else {
-    std::cout << "Child process ID: " << ::getpid() << std::endl;
-    std::cout << "blah" << std::endl;
+    std::cout << "(child) Child process ID: " << ::getpid() << std::endl;
+    std::cout << "(child) blah" << std::endl;
     // if (stream->Read(&reply)) {
     //   std::cout << "Got message " << reply.message() << std::endl;
     // } else {
@@ -311,18 +311,18 @@ void midCallRecovery() {
     std::cout << "(child) Status received" << std::endl;
     if (!grpcStatus.ok()) {
       std::cout << "(child) Streaming rpc failed." << std::endl;
-      std::cout << grpcStatus.error_code() << std::endl;
-      std::cout << grpcStatus.error_message() << std::endl;
-      std::cout << grpcStatus.error_details() << std::endl;
+      std::cout << "(child) " << grpcStatus.error_code() << std::endl;
+      std::cout << "(child) " << grpcStatus.error_message() << std::endl;
+      std::cout << "(child) " << grpcStatus.error_details() << std::endl;
     }
 
     std::string child_same_channel_reply =
         greeter->SayHello("child same channel");
-    std::cout << "Child received: " << child_same_channel_reply << std::endl;
+    std::cout << "(child) Child received: " << child_same_channel_reply << std::endl;
 
     std::string child_same_channel_reply2 =
         greeter->SayHello("child same channel again");
-    std::cout << "Child received: " << child_same_channel_reply2 << std::endl;
+    std::cout << "(child) Child received: " << child_same_channel_reply2 << std::endl;
   }
 }
 
@@ -346,41 +346,41 @@ void childReadsInheritedCall() {
   // }
   std::cout << "Original process ID: " << ::getpid() << std::endl;
   if (fork() != 0) {
-    std::cout << "Parent process ID: " << ::getpid() << std::endl;
-    // std::this_thread::sleep_for(std::chrono::seconds(20));
+    std::cout << "(parent) Parent process ID: " << ::getpid() << std::endl;
+    std::this_thread::sleep_for(std::chrono::seconds(2));
 
     // HelloRequest request2;
     // request2.set_name("after fork stream");
     // if (!stream->Write(request2)) {
     //   std::cout << "Error writing" << std::endl;
     // }
-    // HelloReply reply2;
-    // if (stream->Read(&reply2)) {
-    //   std::cout << "Got message " << reply2.message() << std::endl;
-    // }
+    HelloReply reply2;
+    if (stream->Read(&reply2)) {
+      std::cout << "(parent) Got message " << reply2.message() << std::endl;
+    }
 
-    // stream->WritesDone();
-    // std::cout << "(parent) StreamingHello done" << std::endl;
+    stream->WritesDone();
+    std::cout << "(parent) StreamingHello done" << std::endl;
 
-    // Status grpcStatus = stream->Finish();
-    // std::cout << "(parent) Status received" << std::endl;
-    // if (!grpcStatus.ok()) {
-    //   std::cout << "(parent) Streaming rpc failed." << std::endl;
-    //   std::cout << grpcStatus.error_code() << std::endl;
-    //   std::cout << grpcStatus.error_message() << std::endl;
-    //   std::cout << grpcStatus.error_details() << std::endl;
-    // }
+    Status grpcStatus = stream->Finish();
+    std::cout << "(parent) Status received" << std::endl;
+    if (!grpcStatus.ok()) {
+      std::cout << "(parent) Streaming rpc failed." << std::endl;
+      std::cout << "(parent) " << grpcStatus.error_code() << std::endl;
+      std::cout << "(parent) " << grpcStatus.error_message() << std::endl;
+      std::cout << "(parent) " << grpcStatus.error_details() << std::endl;
+    }
 
     int status;
     pid_t pid = wait(&status);
     std::cout << "(" << ::getpid() << ") Child process is done " << status << std::endl;
   } else {
-    std::cout << "Child process ID: " << ::getpid() << std::endl;
+    std::cout << "(child) Child process ID: " << ::getpid() << std::endl;
     if (stream->Read(&reply)) {
       // This should not happen after fork
-      std::cout << "Got message " << reply.message() << std::endl;
+      std::cout << "(child) Got message " << reply.message() << std::endl;
     } else {
-      std::cout << "No message" << std::endl;
+      std::cout << "(child) No message" << std::endl;
     }
     // Segfaults for epollex. Not for epoll1.
     // Must be epoll_ctl a child fd onto a parent epfd?
@@ -391,18 +391,18 @@ void childReadsInheritedCall() {
     std::cout << "(child) Status received" << std::endl;
     if (!grpcStatus.ok()) {
       std::cout << "(child) Streaming rpc failed." << std::endl;
-      std::cout << grpcStatus.error_code() << std::endl;
-      std::cout << grpcStatus.error_message() << std::endl;
-      std::cout << grpcStatus.error_details() << std::endl;
+      std::cout << "(child) " << grpcStatus.error_code() << std::endl;
+      std::cout << "(child) " << grpcStatus.error_message() << std::endl;
+      std::cout << "(child) " << grpcStatus.error_details() << std::endl;
     }
 
     std::string child_same_channel_reply =
         greeter->SayHello("child same channel");
-    std::cout << "Child received: " << child_same_channel_reply << std::endl;
+    std::cout << "(child) Child received: " << child_same_channel_reply << std::endl;
 
     std::string child_same_channel_reply2 =
         greeter->SayHello("child same channel again");
-    std::cout << "Child received: " << child_same_channel_reply2 << std::endl;
+    std::cout << "(child) Child received: " << child_same_channel_reply2 << std::endl;
   }
 }
 

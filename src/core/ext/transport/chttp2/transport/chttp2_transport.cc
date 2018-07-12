@@ -1174,6 +1174,7 @@ void grpc_chttp2_complete_closure_step(grpc_chttp2_transport* t,
                                        grpc_chttp2_stream* s,
                                        grpc_closure** pclosure,
                                        grpc_error* error, const char* desc) {
+  gpr_log(GPR_DEBUG, "grpc_chttp2_complete_closure_step");
   grpc_closure* closure = *pclosure;
   *pclosure = nullptr;
   if (closure == nullptr) {

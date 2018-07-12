@@ -640,7 +640,8 @@ static grpc_error* pollable_add_fd(pollable* p, grpc_fd* fd) {
 
   if (fd->fork_epoch < grpc_core::Fork::GetForkEpoch()) {
     gpr_log(GPR_ERROR, "adding inherited fd to epfd!");
-    return error;
+    gpr_mu_unlock(&p->mu);
+    return GRPC_ERROR_NONE;
   }
 
   const int epfd = p->epfd;
@@ -692,9 +693,13 @@ static grpc_error* pollable_add_fd(pollable* p, grpc_fd* fd) {
   ev_fd.data.ptr = reinterpret_cast<void*>(reinterpret_cast<intptr_t>(fd) |
                                            (fd->track_err ? 2 : 0));
   GRPC_STATS_INC_SYSCALL_EPOLL_CTL();
+
+  gpr_log(GPR_DEBUG, "Invoking epoll_ctl adding fd %d (epoch: %d) to epfd %d on pollable %p (epoch: %d)", fd->fd,
+    fd->fork_epoch, epfd, p, p->fork_epoch);
   if (epoll_ctl(epfd, EPOLL_CTL_ADD, fd->fd, &ev_fd) != 0) {
     switch (errno) {
       case EEXIST:
+        gpr_log(GPR_DEBUG, "EEXIST error");
         break;
       default:
         append_error(&error, GRPC_OS_ERROR(errno, "epoll_ctl"), err_desc);
@@ -974,9 +979,9 @@ static grpc_error* pollable_process_events(grpc_pollset* pollset,
 
       if (grpc_polling_trace.enabled()) {
         gpr_log(GPR_INFO,
-                "PS:%p got fd %p (%d): cancel=%d read=%d "
+                "PS:%p got fd %p (fd: %d, epoch: %d): cancel=%d read=%d "
                 "write=%d",
-                pollset, fd, fd->fd, cancel, read_ev, write_ev);
+                pollset, fd, fd->fd, fd->fork_epoch, cancel, read_ev, write_ev);
       }
       if (error && !err_fallback) {
         fd_has_errors(fd);
