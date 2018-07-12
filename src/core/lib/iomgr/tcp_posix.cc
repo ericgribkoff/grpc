@@ -373,7 +373,6 @@ static void call_read_cb(grpc_tcp* tcp, grpc_error* error) {
 
 #define MAX_READ_IOVEC 4
 static void tcp_do_read(grpc_tcp* tcp) {
-  gpr_log(GPR_DEBUG, "in tcp_do_read");
   GPR_TIMER_SCOPE("tcp_do_read", 0);
   struct msghdr msg;
   struct iovec iov[MAX_READ_IOVEC];
@@ -381,7 +380,6 @@ static void tcp_do_read(grpc_tcp* tcp) {
   size_t i;
 
   if (tcp->base.fork_epoch < grpc_core::Fork::GetForkEpoch()) {
-    gpr_log(GPR_DEBUG, "closing socket due to fork");
     grpc_slice_buffer_reset_and_unref_internal(tcp->incoming_buffer);
     call_read_cb(
         tcp, tcp_annotate_error(
@@ -501,7 +499,6 @@ static void tcp_handle_read(void* arg /* grpc_tcp */, grpc_error* error) {
 
 static void tcp_read(grpc_endpoint* ep, grpc_slice_buffer* incoming_buffer,
                      grpc_closure* cb) {
-  gpr_log(GPR_DEBUG, "in tcp_read");
   grpc_tcp* tcp = reinterpret_cast<grpc_tcp*>(ep);
   GPR_ASSERT(tcp->read_cb == nullptr);
   tcp->read_cb = cb;
@@ -670,9 +667,7 @@ static void tcp_write(grpc_endpoint* ep, grpc_slice_buffer* buf,
     }
   }
 
-  gpr_log(GPR_ERROR, "in tcp_write");
   if (ep->fork_epoch < grpc_core::Fork::GetForkEpoch()) {
-    gpr_log(GPR_ERROR, "aborting due to fork epoch");
     GRPC_CLOSURE_SCHED(
         cb, grpc_fd_is_shutdown(tcp->em_fd)
                 ? GRPC_ERROR_NONE

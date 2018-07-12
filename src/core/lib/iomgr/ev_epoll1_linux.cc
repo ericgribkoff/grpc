@@ -336,8 +336,7 @@ static void fd_shutdown_internal(grpc_fd* fd, grpc_error* why,
   if (fd->read_closure->SetShutdown(GRPC_ERROR_REF(why))) {
     if (!releasing_fd) {
       if (fd->fork_epoch < grpc_core::Fork::GetForkEpoch()) {
-        gpr_log(GPR_ERROR, "skipping shutdown due to old fork epoch");
-        gpr_log(GPR_ERROR, "result of close: %d", close(fd->fd));
+        close(fd->fd);
       } else {
         shutdown(fd->fd, SHUT_RDWR);
       }

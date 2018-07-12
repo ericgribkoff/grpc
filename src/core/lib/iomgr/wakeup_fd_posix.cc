@@ -72,7 +72,7 @@ grpc_error* grpc_wakeup_fd_consume_wakeup(grpc_wakeup_fd* fd_info) {
 }
 
 grpc_error* grpc_wakeup_fd_wakeup(grpc_wakeup_fd* fd_info) {
-  gpr_log(GPR_DEBUG, "grpc_wakeup_fd_wakeup");
+  // TODO: check fork epoch?
   if (cv_wakeup_fds_enabled) {
     return grpc_cv_wakeup_fd_vtable.wakeup(fd_info);
   }
