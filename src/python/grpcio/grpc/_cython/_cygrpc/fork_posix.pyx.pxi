@@ -63,11 +63,21 @@ cdef void __prefork() nogil:
                 'Behavior after fork will be undefined.')
 
 
-cdef void __postfork() nogil:
+cdef void __postfork_parent() nogil:
     with gil:
         with _fork_state.fork_in_progress_condition:
+            _fork_state.post_fork_child_cleanup_callbacks = []
             _fork_state.fork_in_progress = False
             _fork_state.fork_in_progress_condition.notify_all()
+
+
+cdef void __postfork_child() nogil:
+    with gil:
+        with _fork_state.fork_in_progress_condition:
+            for state_to_reset in _fork_state.postfork_states_to_reset:
+                state_to_reset.reset_postfork_child()
+            _fork_state.post_fork_child_cleanup_callbacks = []
+            _fork_state.fork_in_progress = False
 
 
 def fork_handlers_and_grpc_init():
@@ -75,7 +85,7 @@ def fork_handlers_and_grpc_init():
     if _EXPERIMENTAL_FORK_SUPPORT_ENABLED:
         with _fork_state.fork_handler_registered_lock:
             if not _fork_state.fork_handler_registered:
-                pthread_atfork(&__prefork, &__postfork, &__postfork)
+                pthread_atfork(&__prefork, &__postfork_parent, &__postfork_child)
                 _fork_state.fork_handler_registered = True
 
 
@@ -90,12 +100,14 @@ def fork_managed_thread(target, args=()):
         return threading.Thread(target=target, args=args)
 
 
-def block_if_fork_in_progress():
+def block_if_fork_in_progress(postfork_state_to_reset=None):
     with _fork_state.fork_in_progress_condition:
-        print("block_if_fork_in_progress")
+        # print("block_if_fork_in_progress")
         if not _fork_state.fork_in_progress:
-            print("not blocking")
+            # print("not blocking")
             return
+        if postfork_state_to_reset is not None:
+            _fork_state.postfork_states_to_reset.append(postfork_state_to_reset)
         _fork_state.active_thread_count.decrement()
         print("blocking")
         _fork_state.fork_in_progress_condition.wait()
@@ -129,6 +141,7 @@ class _ForkState(object):
     def __init__(self):
         self.fork_in_progress_condition = threading.Condition()
         self.fork_in_progress = False
+        self.postfork_states_to_reset = []
         self.fork_handler_registered_lock = threading.Lock()
         self.fork_handler_registered = False
         self.active_thread_count = _ActiveThreadCount()

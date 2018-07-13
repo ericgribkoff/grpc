@@ -674,12 +674,15 @@ class _ChannelCallState(object):
         self.channel = channel
         self.managed_calls = 0
 
+    def reset_postfork_child(self):
+        self.managed_calls = 0
+
 
 def _run_channel_spin_thread(state):
 
     def channel_spin():
         while True:
-            cygrpc.block_if_fork_in_progress()
+            cygrpc.block_if_fork_in_progress(state)
             event = state.channel.next_call_event()
             call_completed = event.tag(event)
             if call_completed:
@@ -745,6 +748,14 @@ class _ChannelConnectivityState(object):
         self.callbacks_and_connectivities = []
         self.delivering = False
 
+    def reset_postfork_child(self):
+        self.polling = False
+        self.connectivity = None
+        self.try_to_connect = False
+        del self.callbacks_and_connectivities[:]
+        self.callbacks_and_connectivities = []
+        self.delivering = False
+
 
 def _deliveries(state):
     callbacks_needing_update = []
@@ -761,7 +772,7 @@ def _deliver(state, initial_connectivity, initial_callbacks):
     callbacks = initial_callbacks
     while True:
         for callback in callbacks:
-            cygrpc.block_if_fork_in_progress()
+            cygrpc.block_if_fork_in_progress(state)
             callable_util.call_logging_exceptions(
                 callback, _CHANNEL_SUBSCRIPTION_CALLBACK_ERROR_LOG_MESSAGE,
                 connectivity)
@@ -803,7 +814,7 @@ def _poll_connectivity(state, channel, initial_try_to_connect):
     while True:
         event = channel.watch_connectivity_state(connectivity,
                                                  time.time() + 0.2)
-        cygrpc.block_if_fork_in_progress()
+        cygrpc.block_if_fork_in_progress(state)
         with state.lock:
             if not state.callbacks_and_connectivities and not state.try_to_connect:
                 state.polling = False

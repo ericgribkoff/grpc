@@ -21,8 +21,8 @@ from google.auth import jwt as google_auth_jwt
 import grpc
 from src.proto.grpc.testing import test_pb2_grpc
 
-#from tests.interop import methods
-#from tests.interop import resources
+from tests.fork import methods
+from tests.fork import resources
 
 
 def _args():
@@ -66,7 +66,7 @@ def _args():
     return parser.parse_args()
 
 
-def _stub(args):
+def _channel(args):
     target = '{}:{}'.format(args.server_host, args.server_port)
     if args.test_case == 'oauth2_auth_token':
         google_credentials, unused_project_id = google_auth.default(
@@ -106,10 +106,7 @@ def _stub(args):
         ),))
     else:
         channel = grpc.insecure_channel(target)
-    if args.test_case == "unimplemented_service":
-        return test_pb2_grpc.UnimplementedServiceStub(channel)
-    else:
-        return test_pb2_grpc.TestServiceStub(channel)
+    return channel
 
 
 def _test_case_from_arg(test_case_arg):
@@ -122,10 +119,10 @@ def _test_case_from_arg(test_case_arg):
 
 def test_fork():
     print "Testing fork"
-    # args = _args()
-    # stub = _stub(args)
-    # test_case = _test_case_from_arg(args.test_case)
-    # test_case.test_interoperability(stub, args)
+    args = _args()
+    channel = _channel(args)
+    test_case = _test_case_from_arg(args.test_case)
+    test_case.run_test(channel, args)
 
 
 if __name__ == '__main__':

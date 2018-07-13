@@ -15,8 +15,10 @@
 
 import enum
 import json
+import multiprocessing
 import os
 import threading
+import time
 
 from google import auth as google_auth
 from google.auth import environment_vars as google_auth_environment_vars
@@ -51,52 +53,6 @@ def _maybe_echo_status_and_message(request, servicer_context):
     if request.HasField('response_status'):
         servicer_context.set_code(request.response_status.code)
         servicer_context.set_details(request.response_status.message)
-
-
-class TestService(test_pb2_grpc.TestServiceServicer):
-
-    def EmptyCall(self, request, context):
-        _maybe_echo_metadata(context)
-        return empty_pb2.Empty()
-
-    def UnaryCall(self, request, context):
-        _maybe_echo_metadata(context)
-        _maybe_echo_status_and_message(request, context)
-        return messages_pb2.SimpleResponse(
-            payload=messages_pb2.Payload(
-                type=messages_pb2.COMPRESSABLE,
-                body=b'\x00' * request.response_size))
-
-    def StreamingOutputCall(self, request, context):
-        _maybe_echo_status_and_message(request, context)
-        for response_parameters in request.response_parameters:
-            yield messages_pb2.StreamingOutputCallResponse(
-                payload=messages_pb2.Payload(
-                    type=request.response_type,
-                    body=b'\x00' * response_parameters.size))
-
-    def StreamingInputCall(self, request_iterator, context):
-        aggregate_size = 0
-        for request in request_iterator:
-            if request.payload is not None and request.payload.body:
-                aggregate_size += len(request.payload.body)
-        return messages_pb2.StreamingInputCallResponse(
-            aggregated_payload_size=aggregate_size)
-
-    def FullDuplexCall(self, request_iterator, context):
-        _maybe_echo_metadata(context)
-        for request in request_iterator:
-            _maybe_echo_status_and_message(request, context)
-            for response_parameters in request.response_parameters:
-                yield messages_pb2.StreamingOutputCallResponse(
-                    payload=messages_pb2.Payload(
-                        type=request.payload.type,
-                        body=b'\x00' * response_parameters.size))
-
-    # NOTE(nathaniel): Apparently this is the same as the full-duplex call?
-    # NOTE(atash): It isn't even called in the interop spec (Oct 22 2015)...
-    def HalfDuplexCall(self, request_iterator, context):
-        return self.FullDuplexCall(request_iterator, context)
 
 
 def _expect_status_code(call, expected_code):
@@ -456,62 +412,154 @@ def _per_rpc_creds(stub, args):
         raise ValueError('expected username %s, got %s' % (wanted_email,
                                                            response.username))
 
+# Subscribing to connectivity updates spawns a gRPC Python internal thread. This
+# test verifies that this thread is correctly paused at fork, and that the
+# child can newly subscribe to the inherited channel
+def _connectivity_watch(channel):
+    # TODO: get errors from child callbacks without this
+    import logging
+    import sys
+    logging.getLogger('grpc.framework.foundation.callable_util').addHandler(logging.StreamHandler(sys.stdout))
+
+    parent_states = []
+    def parent_callback(state):
+        parent_states.append(state)
+        print('invoked with ', state)
+    print('subscribing')
+    channel.subscribe(parent_callback)
+    print('channel is polling:', channel._connectivity_state.polling)
+    stub = test_pb2_grpc.TestServiceStub(channel)
+    def child_process():
+        child_states = []
+        def child_callback(state):
+            child_states.append(state)
+            print('invoked with ', state)
+        print('(inherited) channel is polling:', channel._connectivity_state.polling)
+        channel.subscribe(child_callback)
+        print('(inherited) channel is polling:', channel._connectivity_state.polling)
+        _large_unary_common_behavior(stub, False, False, None)
+        if len(child_states) < 2:
+            raise ValueError('child did not receive subsequent connectivity updates')
+        if child_states[-1] != grpc.ChannelConnectivity.READY:
+            raise ValueError('child channel did not move to READY')
+    print('forking')
+    process = multiprocessing.Process(target=child_process)
+    process.start()
+    print('channel is polling:', channel._connectivity_state.polling)
+    _large_unary_common_behavior(stub, False, False, None)
+    if len(parent_states) < 2:
+        raise ValueError('parent did not receive subsequent connectivity updates')
+    if parent_states[-1] != grpc.ChannelConnectivity.READY:
+        raise ValueError('parent channel did not move to READY')
+    print('waiting for child')
+    process.join()
+    print('child exited with code ', process.exitcode)
+    if process.exitcode != 0:
+        raise ValueError('Child process failed')
+
+# Subscribing to connectivity updates spawns a gRPC Python internal thread that
+# polls the C++ channel. This thread will not exist in the child process.
+def _connectivity_watch_other(channel):
+    def cb(some_arg):
+        print('invoked with ', some_arg)
+    print('subscribing')
+    channel.subscribe(cb)
+    print('channel is polling:', channel._connectivity_state.polling)
+    def unsub():
+        time.sleep(3)
+        channel.unsubscribe(cb)
+        print('unsubbed!')
+    # t = threading.Thread(target=unsub)
+    # t.start()
+    stub = test_pb2_grpc.TestServiceStub(channel)
+    _large_unary_common_behavior(stub, False, False, None)
+
+    print('forking')
+    def childFn():
+        connectivity_updates = []
+        def childCb(some_arg):
+            connectivity_updates.append(some_arg)
+            print('(child) invoked with ', some_arg)
+        channel.subscribe(childCb)
+        print('(inherited) channel is polling:', channel._connectivity_state.polling)
+        time.sleep(10)
+        channel.close()
+        # if connectivity_updates[0] != grpc.ChannelConnectivity.READY:
+        #     raise ValueError('wrong initial connectivity')
+        # if connectivity_updates[1] != grpc.ChannelConnectivity.READY:
+        #     raise ValueError('wrong initial connectivity')
+        # _large_unary_common_behavior(stub, False, False, None)
+    process = multiprocessing.Process(target=childFn)
+    process.start()
+    try:
+        print('channel is polling:', channel._connectivity_state.polling)
+        _large_unary_common_behavior(stub, False, False, None)
+    except:
+        pass
+    print('waiting for child')
+    process.join()
+    print('child exited with code ', process.exitcode)
+    if process.exitcode != 0:
+        raise ValueError('Child process failed')
 
 @enum.unique
 class TestCase(enum.Enum):
-    EMPTY_UNARY = 'empty_unary'
-    LARGE_UNARY = 'large_unary'
-    SERVER_STREAMING = 'server_streaming'
-    CLIENT_STREAMING = 'client_streaming'
-    PING_PONG = 'ping_pong'
-    CANCEL_AFTER_BEGIN = 'cancel_after_begin'
-    CANCEL_AFTER_FIRST_RESPONSE = 'cancel_after_first_response'
-    EMPTY_STREAM = 'empty_stream'
-    STATUS_CODE_AND_MESSAGE = 'status_code_and_message'
-    UNIMPLEMENTED_METHOD = 'unimplemented_method'
-    UNIMPLEMENTED_SERVICE = 'unimplemented_service'
-    CUSTOM_METADATA = "custom_metadata"
-    COMPUTE_ENGINE_CREDS = 'compute_engine_creds'
-    OAUTH2_AUTH_TOKEN = 'oauth2_auth_token'
-    JWT_TOKEN_CREDS = 'jwt_token_creds'
-    PER_RPC_CREDS = 'per_rpc_creds'
-    TIMEOUT_ON_SLEEPING_SERVER = 'timeout_on_sleeping_server'
+    CONNECTIVITY_WATCH = 'connectivity_watch'
+    # EMPTY_UNARY = 'empty_unary'
+    # LARGE_UNARY = 'large_unary'
+    # SERVER_STREAMING = 'server_streaming'
+    # CLIENT_STREAMING = 'client_streaming'
+    # PING_PONG = 'ping_pong'
+    # CANCEL_AFTER_BEGIN = 'cancel_after_begin'
+    # CANCEL_AFTER_FIRST_RESPONSE = 'cancel_after_first_response'
+    # EMPTY_STREAM = 'empty_stream'
+    # STATUS_CODE_AND_MESSAGE = 'status_code_and_message'
+    # UNIMPLEMENTED_METHOD = 'unimplemented_method'
+    # UNIMPLEMENTED_SERVICE = 'unimplemented_service'
+    # CUSTOM_METADATA = "custom_metadata"
+    # COMPUTE_ENGINE_CREDS = 'compute_engine_creds'
+    # OAUTH2_AUTH_TOKEN = 'oauth2_auth_token'
+    # JWT_TOKEN_CREDS = 'jwt_token_creds'
+    # PER_RPC_CREDS = 'per_rpc_creds'
+    # TIMEOUT_ON_SLEEPING_SERVER = 'timeout_on_sleeping_server'
 
-    def test_interoperability(self, stub, args):
-        if self is TestCase.EMPTY_UNARY:
-            _empty_unary(stub)
-        elif self is TestCase.LARGE_UNARY:
-            _large_unary(stub)
-        elif self is TestCase.SERVER_STREAMING:
-            _server_streaming(stub)
-        elif self is TestCase.CLIENT_STREAMING:
-            _client_streaming(stub)
-        elif self is TestCase.PING_PONG:
-            _ping_pong(stub)
-        elif self is TestCase.CANCEL_AFTER_BEGIN:
-            _cancel_after_begin(stub)
-        elif self is TestCase.CANCEL_AFTER_FIRST_RESPONSE:
-            _cancel_after_first_response(stub)
-        elif self is TestCase.TIMEOUT_ON_SLEEPING_SERVER:
-            _timeout_on_sleeping_server(stub)
-        elif self is TestCase.EMPTY_STREAM:
-            _empty_stream(stub)
-        elif self is TestCase.STATUS_CODE_AND_MESSAGE:
-            _status_code_and_message(stub)
-        elif self is TestCase.UNIMPLEMENTED_METHOD:
-            _unimplemented_method(stub)
-        elif self is TestCase.UNIMPLEMENTED_SERVICE:
-            _unimplemented_service(stub)
-        elif self is TestCase.CUSTOM_METADATA:
-            _custom_metadata(stub)
-        elif self is TestCase.COMPUTE_ENGINE_CREDS:
-            _compute_engine_creds(stub, args)
-        elif self is TestCase.OAUTH2_AUTH_TOKEN:
-            _oauth2_auth_token(stub, args)
-        elif self is TestCase.JWT_TOKEN_CREDS:
-            _jwt_token_creds(stub, args)
-        elif self is TestCase.PER_RPC_CREDS:
-            _per_rpc_creds(stub, args)
+    def run_test(self, channel, args):
+        if self is TestCase.CONNECTIVITY_WATCH:
+            _connectivity_watch(channel)
+        # if self is TestCase.EMPTY_UNARY:
+        #     _empty_unary(stub)
+        # elif self is TestCase.LARGE_UNARY:
+        #     _large_unary(stub)
+        # elif self is TestCase.SERVER_STREAMING:
+        #     _server_streaming(stub)
+        # elif self is TestCase.CLIENT_STREAMING:
+        #     _client_streaming(stub)
+        # elif self is TestCase.PING_PONG:
+        #     _ping_pong(stub)
+        # elif self is TestCase.CANCEL_AFTER_BEGIN:
+        #     _cancel_after_begin(stub)
+        # elif self is TestCase.CANCEL_AFTER_FIRST_RESPONSE:
+        #     _cancel_after_first_response(stub)
+        # elif self is TestCase.TIMEOUT_ON_SLEEPING_SERVER:
+        #     _timeout_on_sleeping_server(stub)
+        # elif self is TestCase.EMPTY_STREAM:
+        #     _empty_stream(stub)
+        # elif self is TestCase.STATUS_CODE_AND_MESSAGE:
+        #     _status_code_and_message(stub)
+        # elif self is TestCase.UNIMPLEMENTED_METHOD:
+        #     _unimplemented_method(stub)
+        # elif self is TestCase.UNIMPLEMENTED_SERVICE:
+        #     _unimplemented_service(stub)
+        # elif self is TestCase.CUSTOM_METADATA:
+        #     _custom_metadata(stub)
+        # elif self is TestCase.COMPUTE_ENGINE_CREDS:
+        #     _compute_engine_creds(stub, args)
+        # elif self is TestCase.OAUTH2_AUTH_TOKEN:
+        #     _oauth2_auth_token(stub, args)
+        # elif self is TestCase.JWT_TOKEN_CREDS:
+        #     _jwt_token_creds(stub, args)
+        # elif self is TestCase.PER_RPC_CREDS:
+        #     _per_rpc_creds(stub, args)
         else:
             raise NotImplementedError(
                 'Test case "%s" not implemented!' % self.name)
