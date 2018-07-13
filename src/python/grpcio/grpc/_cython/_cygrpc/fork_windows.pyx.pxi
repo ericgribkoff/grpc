@@ -25,5 +25,5 @@ def fork_managed_thread(target, args=()):
     return threading.Thread(target=target, args=args)
 
 
-def is_fork_in_progress():
-    return False
+def block_if_fork_in_progress():
+    pass

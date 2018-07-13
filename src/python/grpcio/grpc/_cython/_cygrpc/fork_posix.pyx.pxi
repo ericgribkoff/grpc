@@ -54,9 +54,9 @@ _EXPERIMENTAL_FORK_SUPPORT_ENABLED = (
 
 cdef void __prefork() nogil:
     with gil:
-        with _fork_state.fork_in_progress_lock:
+        with _fork_state.fork_in_progress_condition:
             _fork_state.fork_in_progress = True
-        if not _fork_state.thread_count.await_zero_threads(
+        if not _fork_state.active_thread_count.await_zero_threads(
                 _AWAIT_THREADS_TIMEOUT_SECONDS):
             _LOGGER.exception(
                 'Failed to shutdown gRPC Python threads prior to fork. '
@@ -65,8 +65,9 @@ cdef void __prefork() nogil:
 
 cdef void __postfork() nogil:
     with gil:
-        with _fork_state.fork_in_progress_lock:
+        with _fork_state.fork_in_progress_condition:
             _fork_state.fork_in_progress = False
+            _fork_state.fork_in_progress_condition.notify_all()
 
 
 def fork_handlers_and_grpc_init():
@@ -81,48 +82,56 @@ def fork_handlers_and_grpc_init():
 def fork_managed_thread(target, args=()):
     if _EXPERIMENTAL_FORK_SUPPORT_ENABLED:
         def managed_target(*args):
-            _fork_state.thread_count.increment()
+            _fork_state.active_thread_count.increment()
             target(*args)
-            _fork_state.thread_count.decrement()
+            _fork_state.active_thread_count.decrement()
         return threading.Thread(target=managed_target, args=args)
     else:
         return threading.Thread(target=target, args=args)
 
 
-def is_fork_in_progress():
-    with _fork_state.fork_in_progress_lock:
-        return _fork_state.fork_in_progress
+def block_if_fork_in_progress():
+    with _fork_state.fork_in_progress_condition:
+        print("block_if_fork_in_progress")
+        if not _fork_state.fork_in_progress:
+            print("not blocking")
+            return
+        _fork_state.active_thread_count.decrement()
+        print("blocking")
+        _fork_state.fork_in_progress_condition.wait()
+        print("done blocking")
+        _fork_state.active_thread_count.increment()
 
 
-class _ThreadCount(object):
+class _ActiveThreadCount(object):
     def __init__(self):
-        self._num_threads = 0
+        self._num_active_threads = 0
         self._condition = threading.Condition()
 
     def increment(self):
         with self._condition:
-            self._num_threads += 1
+            self._num_active_threads += 1
 
     def decrement(self):
         with self._condition:
-            self._num_threads -= 1
-            if self._num_threads == 0:
+            self._num_active_threads -= 1
+            if self._num_active_threads == 0:
                 self._condition.notify_all()
 
     def await_zero_threads(self, timeout_secs):
         with self._condition:
-            if self._num_threads > 0:
+            if self._num_active_threads > 0:
                 self._condition.wait(timeout_secs)
-            return self._num_threads == 0
+            return self._num_active_threads == 0
 
 
 class _ForkState(object):
     def __init__(self):
-        self.fork_in_progress_lock = threading.Lock()
+        self.fork_in_progress_condition = threading.Condition()
         self.fork_in_progress = False
         self.fork_handler_registered_lock = threading.Lock()
         self.fork_handler_registered = False
-        self.thread_count = _ThreadCount()
+        self.active_thread_count = _ActiveThreadCount()
 
 
 _fork_state = _ForkState()
