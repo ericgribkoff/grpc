@@ -413,9 +413,10 @@ def _per_rpc_creds(stub, args):
         raise ValueError('expected username %s, got %s' % (wanted_email,
                                                            response.username))
 
-# Subscribing to connectivity updates spawns a gRPC Python internal thread. This
-# test verifies that this thread is correctly paused at fork, and that the
-# child can newly subscribe to the inherited channel
+
+# After a fork with a subscribed connectivity watcher:
+#   Child process does not receive updates for the parent's subscribed callback
+#   Child may subscribe a new connectivity watcher to the channel
 def _connectivity_watch(channel):
     parent_states = []
     def parent_callback(state):
@@ -429,20 +430,18 @@ def _connectivity_watch(channel):
                     child_states.append(state)
             channel.subscribe(child_callback)
             _large_unary_common_behavior(stub, False, False, None)
-            if len(child_states) < 2:
-                raise ValueError('child did not receive subsequent connectivity updates')
-            if child_states[-1] != grpc.ChannelConnectivity.READY:
-                raise ValueError('child channel did not move to READY')
+            if len(child_states) < 2 or child_states[-1] != grpc.ChannelConnectivity.READY:
+                raise ValueError('Channel did not move to READY')
+            if len(parent_states) > 1:
+                raise ValueError('Received connectivity updates on parent callback')
         except Exception as e:
             child_error_queue.put(str(e))
     child_error_queue = multiprocessing.Queue()
     process = multiprocessing.Process(target=child_process, args=(child_error_queue,))
     process.start()
     _large_unary_common_behavior(stub, False, False, None)
-    if len(parent_states) < 2:
-        raise ValueError('parent did not receive subsequent connectivity updates')
-    if parent_states[-1] != grpc.ChannelConnectivity.READY:
-        raise ValueError('parent channel did not move to READY')
+    if len(parent_states) < 2 or parent_states[-1] != grpc.ChannelConnectivity.READY:
+        raise ValueError('Channel did not move to READY')
     process.join()
     try:
         child_error = child_error_queue.get(block=False)
