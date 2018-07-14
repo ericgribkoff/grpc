@@ -118,7 +118,6 @@ def _test_case_from_arg(test_case_arg):
 
 
 def test_fork():
-    print "Testing fork"
     args = _args()
     channel = _channel(args)
     test_case = _test_case_from_arg(args.test_case)
