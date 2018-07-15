@@ -27,3 +27,7 @@ def fork_managed_thread(target, args=()):
 
 def block_if_fork_in_progress():
     pass
+
+
+def get_fork_epoch():
+	return 0

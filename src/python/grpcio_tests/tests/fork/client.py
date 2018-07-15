@@ -122,6 +122,7 @@ def test_fork():
     channel = _channel(args)
     test_case = _test_case_from_arg(args.test_case)
     test_case.run_test(channel, args)
+    channel.close()
 
 
 if __name__ == '__main__':

@@ -15,6 +15,7 @@
 cimport cpython
 
 import threading
+import time
 
 _INTERNAL_CALL_ERROR_MESSAGE_FORMAT = (
     'Internal gRPC call error %d. ' +
@@ -142,13 +143,13 @@ cdef _cancel(
       _check_and_raise_call_error_no_metadata(c_call_error)
 
 
-cdef BatchOperationEvent _next_call_event(
+cdef _next_call_event(
     _ChannelState channel_state, grpc_completion_queue *c_completion_queue,
     on_success):
-  tag, event = _latent_event(c_completion_queue, None)
+  tag, event = _latent_event(c_completion_queue, time.time()+1)
   with channel_state.condition:
     on_success(tag)
-    channel_state.condition.notify_all()
+    channel_state.condition.notify_all() # TODO: handle queue timeout
   return event
 
 
@@ -430,7 +431,8 @@ cdef class Channel:
 
   def next_call_event(self):
     def on_success(tag):
-      _process_integrated_call_tag(self._state, tag)
+      if tag is not None:
+        _process_integrated_call_tag(self._state, tag)
     return _next_call_event(
         self._state, self._state.c_call_completion_queue, on_success)
 
