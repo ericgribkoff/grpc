@@ -17,7 +17,6 @@ import enum
 import json
 import multiprocessing
 import os
-import pdb
 import threading
 import time
 
@@ -94,9 +93,7 @@ def _large_unary_common_behavior(stub, fill_username, fill_oauth_scope,
         fill_oauth_scope=fill_oauth_scope)
     response_future = stub.UnaryCall.future(
         request, credentials=call_credentials)
-    print('created response future')
     response = response_future.result()
-    print('got response future result')
     _validate_payload_type_and_length(response, messages_pb2.COMPRESSABLE, size)
     return response
 
@@ -165,7 +162,6 @@ class _Pipe(object):
         return self.next()
 
     def next(self):
-        print('next invoked on _Pipe')
         with self._condition:
             while not self._values and self._open:
                 self._condition.wait()
@@ -484,9 +480,6 @@ def _in_progress_bidi_continue_call(channel):
             if i == 2:
                 def child_process(child_error_queue):
                     try:
-                        time.sleep(2)
-                        print('accessing call')
-                        print(parent_bidi_call._state.condition)
                         try:
                             parent_bidi_call.result(1)
                             raise ValueError('Received result on inherited call')
@@ -500,27 +493,18 @@ def _in_progress_bidi_continue_call(channel):
                         if inherited_details != 'Stream removed':
                             raise ValueError('expected inherited details Stream removed, got %s' % inherited_details)
                     except Exception as e:
-                        print('e:', type(e))
                         child_error_queue.put(str(e))
                 process = multiprocessing.Process(target=child_process, args=(child_error_queue,))
-                print('forking')
                 process.start()
             response = next(parent_bidi_call)
             _validate_payload_type_and_length(
                 response, messages_pb2.COMPRESSABLE, response_size)
             i += 1
 
-                # print('waiting to join')
-                # process.join()
         pipe.close()
-        print('main process done')
-        print('\n\n\n\n')
-        print(response_iterator.code())
-        print('waiting to join')
         process.join()
         try:
             child_error = child_error_queue.get(block=False)
-            print('child_error: ', child_error)
             raise ValueError('Child process failed: %s' % child_error)
         except queue.Empty:
             pass

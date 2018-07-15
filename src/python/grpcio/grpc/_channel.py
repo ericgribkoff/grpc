@@ -115,10 +115,7 @@ class _RPCState(object):
         self.fork_epoch = cygrpc.get_fork_epoch()
 
     def reset_postfork_child(self):
-        print('in _RPCState reset')
-        print(self.condition)
         self.condition = threading.Condition()
-        print(self.condition)
 
 
 def _abort(state, code, details):
@@ -134,8 +131,6 @@ def _handle_event(event, state, response_deserializer):
     callbacks = []
     for batch_operation in event.batch_operations:
         operation_type = batch_operation.type()
-        print('operation_type: ', operation_type)
-        print('initial due: ', state.due)
         state.due.remove(operation_type)
         if operation_type == cygrpc.OperationType.receive_initial_metadata:
             state.initial_metadata = batch_operation.initial_metadata()
@@ -154,7 +149,6 @@ def _handle_event(event, state, response_deserializer):
             if state.code is None:
                 code = _common.CYGRPC_STATUS_CODE_TO_STATUS_CODE.get(
                     batch_operation.code())
-                print('received status: ', code)
                 if code is None:
                     state.code = grpc.StatusCode.UNKNOWN
                     state.details = _unknown_code_details(
@@ -224,7 +218,6 @@ def _consume_request_iterator(request_iterator, state, call, request_serializer,
                         else:
                             return
                         while True:
-                            print('consume_request_iterator waiting on its condition')
                             state.condition.wait(timeout=0.2) # TODO: guard by flag
                             cygrpc.block_if_fork_in_progress(state)
                             if state.code is None:
@@ -701,16 +694,10 @@ def _run_channel_spin_thread(state):
     def channel_spin():
         while True:
             cygrpc.block_if_fork_in_progress(state)
-            print('channel spin thread continuing')
             event = state.channel.next_call_event()
             if event.completion_type == cygrpc.CompletionType.queue_timeout:
-                print('queue_timeout!', os.getpid())
-                print event
                 continue
-            print('got event', event)
             call_completed = event.tag(event)
-            print('call completed', call_completed)
-            print()
             if call_completed:
                 with state.lock:
                     state.managed_calls -= 1

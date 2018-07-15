@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import traceback
 
 cdef class _Tag:
 
@@ -26,7 +25,6 @@ cdef class _ConnectivityTag(_Tag):
     self._user_tag = user_tag
 
   cdef ConnectivityEvent event(self, grpc_event c_event):
-    traceback.print_stack()
     return ConnectivityEvent(c_event.type, c_event.success, self._user_tag)
 
 
