@@ -91,10 +91,8 @@ def _large_unary_common_behavior(stub, fill_username, fill_oauth_scope,
         payload=messages_pb2.Payload(body=b'\x00' * 271828),
         fill_username=fill_username,
         fill_oauth_scope=fill_oauth_scope)
-    print('creating future')
     response_future = stub.UnaryCall.future(
         request, credentials=call_credentials)
-    print('got future')
     response = response_future.result()
     _validate_payload_type_and_length(response, messages_pb2.COMPRESSABLE, size)
     return response
@@ -166,11 +164,7 @@ class _Pipe(object):
     def next(self):
         with self._condition:
             while not self._values and self._open:
-                import traceback
-                print('pipe waiting on condition')
-                traceback.print_stack()
                 self._condition.wait()
-                print('pipe done waiting')
             if self._values:
                 return self._values.pop(0)
             else:
@@ -422,8 +416,6 @@ def _per_rpc_creds(stub, args):
 
 class _ChildProcess(object):
 
-    tag = 0
-
     def __init__(self, task):
         self._exceptions = multiprocessing.Queue()
         def record_exceptions():
@@ -432,8 +424,6 @@ class _ChildProcess(object):
             except Exception as e:
                 self._exceptions.put(str(e))
         self._process = multiprocessing.Process(target=record_exceptions)
-        self._tag = _ChildProcess.tag
-        _ChildProcess.tag += 1
 
     def start(self):
         self._process.start()
@@ -445,7 +435,6 @@ class _ChildProcess(object):
             raise ValueError('Child process failed: %s' % exception)
         except queue.Empty:
             pass
-        print('process finished: ', self._tag)
 
 
 def _async_unary_same_channel(channel):
@@ -508,28 +497,26 @@ def _in_progress_bidi_continue_call(channel):
     parent_bidi_call = stub.FullDuplexCall(pipe)
 
     def child_target():
-        # try:
-        #     print('in child')
-        #     print(parent_bidi_call.done())
-        #     print(parent_bidi_call.result(timeout=1))
-        #     print(parent_bidi_call.code())
-        #     raise ValueError('Received result on inherited call')
-        # except grpc.FutureTimeoutError:
-        #     print('timeout')
-        #     pass
-        # pipe.close()
+        try:
+            parent_bidi_call.result(timeout=1)
+            raise ValueError('Received result on inherited call')
+        except grpc.FutureTimeoutError:
+            pass
+        request = messages_pb2.StreamingOutputCallRequest(
+            response_type=messages_pb2.COMPRESSABLE,
+            response_parameters=(
+                messages_pb2.ResponseParameters(size=1),),
+            payload=messages_pb2.Payload(body=b'\x00' * 1))
         _large_unary_common_behavior(stub, False, False, None)
-        print('done unary')
-        # inherited_code = parent_bidi_call.code() # can block in first fork, before...connection established?
-        # print(inherited_code)
-        # inherited_details = parent_bidi_call.details()
-        # if inherited_code != grpc.StatusCode.UNKNOWN:
-        #     raise ValueError('Expected inherited code UNKNOWN, got %s' % inherited_code)
-        # if inherited_details != 'Stream removed':
-        #     raise ValueError('Expected inherited details Stream removed, got %s' % inherited_details)
+        inherited_code = parent_bidi_call.code()
+        inherited_details = parent_bidi_call.details()
+        if inherited_code != grpc.StatusCode.UNKNOWN:
+            raise ValueError('Expected inherited code UNKNOWN, got %s' % inherited_code)
+        if inherited_details != 'Stream removed':
+            raise ValueError('Expected inherited details Stream removed, got %s' % inherited_details)
 
     child_processes = []
-    i = 0
+    first_message_received = False
     for response_size, payload_size in zip(request_response_sizes,
                                            request_payload_sizes):
         request = messages_pb2.StreamingOutputCallRequest(
@@ -538,34 +525,23 @@ def _in_progress_bidi_continue_call(channel):
                 messages_pb2.ResponseParameters(size=response_size),),
             payload=messages_pb2.Payload(body=b'\x00' * payload_size))
         pipe.add(request)
-        if i == 0: #i == 3: # first one may hang
-            child_process_pre_response = _ChildProcess(child_target)
-            child_process_pre_response.start()
-            child_processes.append(child_process_pre_response)           
+        if first_message_received:
+            child_process = _ChildProcess(child_target)
+            child_process.start()
+            child_processes.append(child_process)           
         response = next(parent_bidi_call)
-        # if i == 0: #i == 3:
-        #     child_process_post_response = _ChildProcess(child_target)
-        #     child_process_post_response.start()
-        #     child_processes.append(child_process_post_response)
+        first_message_received = True
+        child_process = _ChildProcess(child_target)
+        child_process.start()
+        child_processes.append(child_process)
         _validate_payload_type_and_length(
             response, messages_pb2.COMPRESSABLE, response_size)
-        i += 1
-
-
     pipe.close()
-    # time.sleep(1)
-
-
-    # child_process = _ChildProcess(child_target)
-    # print('forking')
-    # child_process.start()
-    # print('forked')
-    # child_processes.append(child_process)
-
+    child_process = _ChildProcess(child_target)
+    child_process.start()
+    child_processes.append(child_process)
     for child_process in child_processes:
-        print('waiting to finish')
         child_process.finish()
-        print('process finished: ', child_process._tag)
 
 
 def _in_progress_bidi_new_blocking_unary(channel):
