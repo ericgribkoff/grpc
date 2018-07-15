@@ -414,6 +414,41 @@ def _per_rpc_creds(stub, args):
                                                            response.username))
 
 
+class _ChildProcess(object):
+
+    def __init__(self, task):
+        self._exceptions = multiprocessing.Queue()
+        def record_exceptions():
+            try:
+                task()
+            except Exception as e:
+                self._exceptions.put(str(e))
+        self._process = multiprocessing.Process(target=record_exceptions)
+
+    def start(self):
+        self._process.start()
+
+    def finish(self):
+        self._process.join()
+        try:
+            exception = self._exceptions.get(block=False)
+            raise ValueError('Child process failed: %s' % exception)
+        except queue.Empty:
+            pass
+
+
+def _async_unary_same_channel(channel):
+    def child_target():
+        _large_unary_common_behavior(stub, False, False, None)
+
+    stub = test_pb2_grpc.TestServiceStub(channel)
+    _large_unary_common_behavior(stub, False, False, None)
+    child_process = _ChildProcess(child_target)
+    child_process.start()
+    _large_unary_common_behavior(stub, False, False, None)
+    child_process.finish()
+
+
 # After a fork with a subscribed connectivity watcher:
 #   Child process does not receive updates for the parent's subscribed callback
 #   Child may subscribe a new connectivity watcher to the channel
@@ -584,11 +619,14 @@ class TestCase(enum.Enum):
     import sys
     logging.getLogger('grpc').addHandler(logging.StreamHandler(sys.stdout))
 
+    ASYNC_UNARY_SAME_CHANNEL = 'async_unary_same_channel'
     CONNECTIVITY_WATCH = 'connectivity_watch'
     IN_PROGRESS_BIDI_CONTINUE_CALL = 'in_progress_bidi_continue_call'
 
     def run_test(self, channel, args):
-        if self is TestCase.CONNECTIVITY_WATCH:
+        if self is TestCase.ASYNC_UNARY_SAME_CHANNEL:
+            _async_unary_same_channel(channel)
+        elif self is TestCase.CONNECTIVITY_WATCH:
             _connectivity_watch(channel)
         elif self is TestCase.IN_PROGRESS_BIDI_CONTINUE_CALL:
             _in_progress_bidi_continue_call(channel)
