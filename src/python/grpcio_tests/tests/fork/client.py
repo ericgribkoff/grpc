@@ -66,49 +66,6 @@ def _args():
     return parser.parse_args()
 
 
-def _channel(args):
-    target = '{}:{}'.format(args.server_host, args.server_port)
-    if args.test_case == 'oauth2_auth_token':
-        google_credentials, unused_project_id = google_auth.default(
-            scopes=[args.oauth_scope])
-        google_credentials.refresh(google_auth.transport.requests.Request())
-        call_credentials = grpc.access_token_call_credentials(
-            google_credentials.token)
-    elif args.test_case == 'compute_engine_creds':
-        google_credentials, unused_project_id = google_auth.default(
-            scopes=[args.oauth_scope])
-        call_credentials = grpc.metadata_call_credentials(
-            google_auth.transport.grpc.AuthMetadataPlugin(
-                credentials=google_credentials,
-                request=google_auth.transport.requests.Request()))
-    elif args.test_case == 'jwt_token_creds':
-        google_credentials = google_auth_jwt.OnDemandCredentials.from_service_account_file(
-            os.environ[google_auth.environment_vars.CREDENTIALS])
-        call_credentials = grpc.metadata_call_credentials(
-            google_auth.transport.grpc.AuthMetadataPlugin(
-                credentials=google_credentials, request=None))
-    else:
-        call_credentials = None
-    if args.use_tls:
-        if args.use_test_ca:
-            root_certificates = resources.test_root_certificates()
-        else:
-            root_certificates = None  # will load default roots.
-
-        channel_credentials = grpc.ssl_channel_credentials(root_certificates)
-        if call_credentials is not None:
-            channel_credentials = grpc.composite_channel_credentials(
-                channel_credentials, call_credentials)
-
-        channel = grpc.secure_channel(target, channel_credentials, ((
-            'grpc.ssl_target_name_override',
-            args.server_host_override,
-        ),))
-    else:
-        channel = grpc.insecure_channel(target)
-    return channel
-
-
 def _test_case_from_arg(test_case_arg):
     for test_case in methods.TestCase:
         if test_case_arg == test_case.value:
@@ -119,11 +76,9 @@ def _test_case_from_arg(test_case_arg):
 
 def test_fork():
     args = _args()
-    channel = _channel(args)
     test_case = _test_case_from_arg(args.test_case)
-    test_case.run_test(channel, args)
-    channel.close()
-
+    test_case.run_test(args)
+    
 
 if __name__ == '__main__':
     test_fork()

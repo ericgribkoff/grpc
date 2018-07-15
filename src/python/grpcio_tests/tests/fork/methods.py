@@ -28,49 +28,11 @@ import grpc
 from grpc.beta import implementations
 from six.moves import queue
 
+from tests.fork import resources
+
 from src.proto.grpc.testing import empty_pb2
 from src.proto.grpc.testing import messages_pb2
 from src.proto.grpc.testing import test_pb2_grpc
-
-_INITIAL_METADATA_KEY = "x-grpc-test-echo-initial"
-_TRAILING_METADATA_KEY = "x-grpc-test-echo-trailing-bin"
-
-
-def _maybe_echo_metadata(servicer_context):
-    """Copies metadata from request to response if it is present."""
-    invocation_metadata = dict(servicer_context.invocation_metadata())
-    if _INITIAL_METADATA_KEY in invocation_metadata:
-        initial_metadatum = (_INITIAL_METADATA_KEY,
-                             invocation_metadata[_INITIAL_METADATA_KEY])
-        servicer_context.send_initial_metadata((initial_metadatum,))
-    if _TRAILING_METADATA_KEY in invocation_metadata:
-        trailing_metadatum = (_TRAILING_METADATA_KEY,
-                              invocation_metadata[_TRAILING_METADATA_KEY])
-        servicer_context.set_trailing_metadata((trailing_metadatum,))
-
-
-def _maybe_echo_status_and_message(request, servicer_context):
-    """Sets the response context code and details if the request asks for them"""
-    if request.HasField('response_status'):
-        servicer_context.set_code(request.response_status.code)
-        servicer_context.set_details(request.response_status.message)
-
-
-def _expect_status_code(call, expected_code):
-    if call.code() != expected_code:
-        raise ValueError('expected code %s, got %s' % (expected_code,
-                                                       call.code()))
-
-
-def _expect_status_details(call, expected_details):
-    if call.details() != expected_details:
-        raise ValueError('expected message %s, got %s' % (expected_details,
-                                                          call.details()))
-
-
-def _validate_status_code_and_details(call, expected_code, expected_details):
-    _expect_status_code(call, expected_code)
-    _expect_status_details(call, expected_details)
 
 
 def _validate_payload_type_and_length(response, expected_type, expected_length):
@@ -82,17 +44,13 @@ def _validate_payload_type_and_length(response, expected_type, expected_length):
                          (expected_length, len(response.payload.body)))
 
 
-def _large_unary_common_behavior(stub, fill_username, fill_oauth_scope,
-                                 call_credentials):
+def _async_unary(stub):
     size = 314159
     request = messages_pb2.SimpleRequest(
         response_type=messages_pb2.COMPRESSABLE,
         response_size=size,
-        payload=messages_pb2.Payload(body=b'\x00' * 271828),
-        fill_username=fill_username,
-        fill_oauth_scope=fill_oauth_scope)
-    response_future = stub.UnaryCall.future(
-        request, credentials=call_credentials)
+        payload=messages_pb2.Payload(body=b'\x00' * 271828))
+    response_future = stub.UnaryCall.future(request)
     response = response_future.result()
     _validate_payload_type_and_length(response, messages_pb2.COMPRESSABLE, size)
     return response
@@ -103,49 +61,6 @@ def _empty_unary(stub):
     if not isinstance(response, empty_pb2.Empty):
         raise TypeError(
             'response is of type "%s", not empty_pb2.Empty!' % type(response))
-
-
-def _large_unary(stub):
-    _large_unary_common_behavior(stub, False, False, None)
-
-
-def _client_streaming(stub):
-    payload_body_sizes = (
-        27182,
-        8,
-        1828,
-        45904,
-    )
-    payloads = (messages_pb2.Payload(body=b'\x00' * size)
-                for size in payload_body_sizes)
-    requests = (messages_pb2.StreamingInputCallRequest(payload=payload)
-                for payload in payloads)
-    response = stub.StreamingInputCall(requests)
-    if response.aggregated_payload_size != 74922:
-        raise ValueError(
-            'incorrect size %d!' % response.aggregated_payload_size)
-
-
-def _server_streaming(stub):
-    sizes = (
-        31415,
-        9,
-        2653,
-        58979,
-    )
-
-    request = messages_pb2.StreamingOutputCallRequest(
-        response_type=messages_pb2.COMPRESSABLE,
-        response_parameters=(
-            messages_pb2.ResponseParameters(size=sizes[0]),
-            messages_pb2.ResponseParameters(size=sizes[1]),
-            messages_pb2.ResponseParameters(size=sizes[2]),
-            messages_pb2.ResponseParameters(size=sizes[3]),
-        ))
-    response_iterator = stub.StreamingOutputCall(request)
-    for index, response in enumerate(response_iterator):
-        _validate_payload_type_and_length(response, messages_pb2.COMPRESSABLE,
-                                          sizes[index])
 
 
 class _Pipe(object):
@@ -187,233 +102,6 @@ class _Pipe(object):
         self.close()
 
 
-def _ping_pong(stub):
-    request_response_sizes = (
-        31415,
-        9,
-        2653,
-        58979,
-    )
-    request_payload_sizes = (
-        27182,
-        8,
-        1828,
-        45904,
-    )
-
-    with _Pipe() as pipe:
-        response_iterator = stub.FullDuplexCall(pipe)
-        for response_size, payload_size in zip(request_response_sizes,
-                                               request_payload_sizes):
-            request = messages_pb2.StreamingOutputCallRequest(
-                response_type=messages_pb2.COMPRESSABLE,
-                response_parameters=(
-                    messages_pb2.ResponseParameters(size=response_size),),
-                payload=messages_pb2.Payload(body=b'\x00' * payload_size))
-            pipe.add(request)
-            response = next(response_iterator)
-            _validate_payload_type_and_length(
-                response, messages_pb2.COMPRESSABLE, response_size)
-
-
-def _cancel_after_begin(stub):
-    with _Pipe() as pipe:
-        response_future = stub.StreamingInputCall.future(pipe)
-        response_future.cancel()
-        if not response_future.cancelled():
-            raise ValueError('expected cancelled method to return True')
-        if response_future.code() is not grpc.StatusCode.CANCELLED:
-            raise ValueError('expected status code CANCELLED')
-
-
-def _cancel_after_first_response(stub):
-    request_response_sizes = (
-        31415,
-        9,
-        2653,
-        58979,
-    )
-    request_payload_sizes = (
-        27182,
-        8,
-        1828,
-        45904,
-    )
-    with _Pipe() as pipe:
-        response_iterator = stub.FullDuplexCall(pipe)
-
-        response_size = request_response_sizes[0]
-        payload_size = request_payload_sizes[0]
-        request = messages_pb2.StreamingOutputCallRequest(
-            response_type=messages_pb2.COMPRESSABLE,
-            response_parameters=(
-                messages_pb2.ResponseParameters(size=response_size),),
-            payload=messages_pb2.Payload(body=b'\x00' * payload_size))
-        pipe.add(request)
-        response = next(response_iterator)
-        # We test the contents of `response` in the Ping Pong test - don't check
-        # them here.
-        response_iterator.cancel()
-
-        try:
-            next(response_iterator)
-        except grpc.RpcError as rpc_error:
-            if rpc_error.code() is not grpc.StatusCode.CANCELLED:
-                raise
-        else:
-            raise ValueError('expected call to be cancelled')
-
-
-def _timeout_on_sleeping_server(stub):
-    request_payload_size = 27182
-    with _Pipe() as pipe:
-        response_iterator = stub.FullDuplexCall(pipe, timeout=0.001)
-
-        request = messages_pb2.StreamingOutputCallRequest(
-            response_type=messages_pb2.COMPRESSABLE,
-            payload=messages_pb2.Payload(body=b'\x00' * request_payload_size))
-        pipe.add(request)
-        try:
-            next(response_iterator)
-        except grpc.RpcError as rpc_error:
-            if rpc_error.code() is not grpc.StatusCode.DEADLINE_EXCEEDED:
-                raise
-        else:
-            raise ValueError('expected call to exceed deadline')
-
-
-def _empty_stream(stub):
-    with _Pipe() as pipe:
-        response_iterator = stub.FullDuplexCall(pipe)
-        pipe.close()
-        try:
-            next(response_iterator)
-            raise ValueError('expected exactly 0 responses')
-        except StopIteration:
-            pass
-
-
-def _status_code_and_message(stub):
-    details = 'test status message'
-    code = 2
-    status = grpc.StatusCode.UNKNOWN  # code = 2
-
-    # Test with a UnaryCall
-    request = messages_pb2.SimpleRequest(
-        response_type=messages_pb2.COMPRESSABLE,
-        response_size=1,
-        payload=messages_pb2.Payload(body=b'\x00'),
-        response_status=messages_pb2.EchoStatus(code=code, message=details))
-    response_future = stub.UnaryCall.future(request)
-    _validate_status_code_and_details(response_future, status, details)
-
-    # Test with a FullDuplexCall
-    with _Pipe() as pipe:
-        response_iterator = stub.FullDuplexCall(pipe)
-        request = messages_pb2.StreamingOutputCallRequest(
-            response_type=messages_pb2.COMPRESSABLE,
-            response_parameters=(messages_pb2.ResponseParameters(size=1),),
-            payload=messages_pb2.Payload(body=b'\x00'),
-            response_status=messages_pb2.EchoStatus(code=code, message=details))
-        pipe.add(request)  # sends the initial request.
-    # Dropping out of with block closes the pipe
-    _validate_status_code_and_details(response_iterator, status, details)
-
-
-def _unimplemented_method(test_service_stub):
-    response_future = (test_service_stub.UnimplementedCall.future(
-        empty_pb2.Empty()))
-    _expect_status_code(response_future, grpc.StatusCode.UNIMPLEMENTED)
-
-
-def _unimplemented_service(unimplemented_service_stub):
-    response_future = (unimplemented_service_stub.UnimplementedCall.future(
-        empty_pb2.Empty()))
-    _expect_status_code(response_future, grpc.StatusCode.UNIMPLEMENTED)
-
-
-def _custom_metadata(stub):
-    initial_metadata_value = "test_initial_metadata_value"
-    trailing_metadata_value = "\x0a\x0b\x0a\x0b\x0a\x0b"
-    metadata = ((_INITIAL_METADATA_KEY, initial_metadata_value),
-                (_TRAILING_METADATA_KEY, trailing_metadata_value))
-
-    def _validate_metadata(response):
-        initial_metadata = dict(response.initial_metadata())
-        if initial_metadata[_INITIAL_METADATA_KEY] != initial_metadata_value:
-            raise ValueError('expected initial metadata %s, got %s' %
-                             (initial_metadata_value,
-                              initial_metadata[_INITIAL_METADATA_KEY]))
-        trailing_metadata = dict(response.trailing_metadata())
-        if trailing_metadata[_TRAILING_METADATA_KEY] != trailing_metadata_value:
-            raise ValueError('expected trailing metadata %s, got %s' %
-                             (trailing_metadata_value,
-                              initial_metadata[_TRAILING_METADATA_KEY]))
-
-    # Testing with UnaryCall
-    request = messages_pb2.SimpleRequest(
-        response_type=messages_pb2.COMPRESSABLE,
-        response_size=1,
-        payload=messages_pb2.Payload(body=b'\x00'))
-    response_future = stub.UnaryCall.future(request, metadata=metadata)
-    _validate_metadata(response_future)
-
-    # Testing with FullDuplexCall
-    with _Pipe() as pipe:
-        response_iterator = stub.FullDuplexCall(pipe, metadata=metadata)
-        request = messages_pb2.StreamingOutputCallRequest(
-            response_type=messages_pb2.COMPRESSABLE,
-            response_parameters=(messages_pb2.ResponseParameters(size=1),))
-        pipe.add(request)  # Sends the request
-        next(response_iterator)  # Causes server to send trailing metadata
-    # Dropping out of the with block closes the pipe
-    _validate_metadata(response_iterator)
-
-
-def _compute_engine_creds(stub, args):
-    response = _large_unary_common_behavior(stub, True, True, None)
-    if args.default_service_account != response.username:
-        raise ValueError('expected username %s, got %s' %
-                         (args.default_service_account, response.username))
-
-
-def _oauth2_auth_token(stub, args):
-    json_key_filename = os.environ[google_auth_environment_vars.CREDENTIALS]
-    wanted_email = json.load(open(json_key_filename, 'rb'))['client_email']
-    response = _large_unary_common_behavior(stub, True, True, None)
-    if wanted_email != response.username:
-        raise ValueError('expected username %s, got %s' % (wanted_email,
-                                                           response.username))
-    if args.oauth_scope.find(response.oauth_scope) == -1:
-        raise ValueError(
-            'expected to find oauth scope "{}" in received "{}"'.format(
-                response.oauth_scope, args.oauth_scope))
-
-
-def _jwt_token_creds(stub, args):
-    json_key_filename = os.environ[google_auth_environment_vars.CREDENTIALS]
-    wanted_email = json.load(open(json_key_filename, 'rb'))['client_email']
-    response = _large_unary_common_behavior(stub, True, False, None)
-    if wanted_email != response.username:
-        raise ValueError('expected username %s, got %s' % (wanted_email,
-                                                           response.username))
-
-
-def _per_rpc_creds(stub, args):
-    json_key_filename = os.environ[google_auth_environment_vars.CREDENTIALS]
-    wanted_email = json.load(open(json_key_filename, 'rb'))['client_email']
-    google_credentials, unused_project_id = google_auth.default(
-        scopes=[args.oauth_scope])
-    call_credentials = grpc.metadata_call_credentials(
-        google_auth_transport_grpc.AuthMetadataPlugin(
-            credentials=google_credentials,
-            request=google_auth_transport_requests.Request()))
-    response = _large_unary_common_behavior(stub, True, False, call_credentials)
-    if wanted_email != response.username:
-        raise ValueError('expected username %s, got %s' % (wanted_email,
-                                                           response.username))
-
-
 class _ChildProcess(object):
 
     def __init__(self, task):
@@ -439,13 +127,55 @@ class _ChildProcess(object):
 
 def _async_unary_same_channel(channel):
     def child_target():
-        _large_unary_common_behavior(stub, False, False, None)
+        _async_unary(stub)
 
     stub = test_pb2_grpc.TestServiceStub(channel)
-    _large_unary_common_behavior(stub, False, False, None)
+    _async_unary(stub)
     child_process = _ChildProcess(child_target)
     child_process.start()
-    _large_unary_common_behavior(stub, False, False, None)
+    _async_unary(stub)
+    child_process.finish()
+
+
+def _async_unary_new_channel(channel, args):
+    def child_target():
+        child_channel = _channel(args)
+        child_stub = test_pb2_grpc.TestServiceStub(channel)
+        _async_unary(child_stub)
+        child_channel.close()
+
+    stub = test_pb2_grpc.TestServiceStub(channel)
+    _async_unary(stub)
+    child_process = _ChildProcess(child_target)
+    child_process.start()
+    _async_unary(stub)
+    child_process.finish()
+
+
+def _blocking_unary_same_channel(channel):
+    def child_target():
+        _empty_unary(stub)
+
+    stub = test_pb2_grpc.TestServiceStub(channel)
+    _empty_unary(stub)
+    child_process = _ChildProcess(child_target)
+    child_process.start()
+    _empty_unary(stub)
+    child_process.finish()
+
+
+def _blocking_unary_new_channel(channel, args):
+    def child_target():
+        child_channel = _channel(args)
+        child_stub = test_pb2_grpc.TestServiceStub(channel)
+        _empty_unary(child_stub)
+        child_channel.close()
+
+    stub = test_pb2_grpc.TestServiceStub(channel)
+    _empty_unary(stub)
+    child_process = _ChildProcess(child_target)
+    child_process.start()
+    _empty_unary(stub)
     child_process.finish()
 
 
@@ -458,7 +188,7 @@ def _connectivity_watch(channel):
                 child_states.append(state)
         child_states = []
         channel.subscribe(child_connectivity_callback)
-        _large_unary_common_behavior(stub, False, False, None)
+        _async_unary(stub)
         if len(child_states) < 2 or child_states[-1] != grpc.ChannelConnectivity.READY:
             raise ValueError('Channel did not move to READY')
         if len(parent_states) > 1:
@@ -472,7 +202,7 @@ def _connectivity_watch(channel):
     stub = test_pb2_grpc.TestServiceStub(channel)
     child_process = _ChildProcess(child_target)
     child_process.start()
-    _large_unary_common_behavior(stub, False, False, None)
+    _async_unary(stub)
     if len(parent_states) < 2 or parent_states[-1] != grpc.ChannelConnectivity.READY:
         raise ValueError('Channel did not move to READY')
     child_process.finish()
@@ -507,7 +237,7 @@ def _in_progress_bidi_continue_call(channel):
             response_parameters=(
                 messages_pb2.ResponseParameters(size=1),),
             payload=messages_pb2.Payload(body=b'\x00' * 1))
-        _large_unary_common_behavior(stub, False, False, None)
+        _async_unary(stub)
         inherited_code = parent_bidi_call.code()
         inherited_details = parent_bidi_call.details()
         if inherited_code != grpc.StatusCode.UNKNOWN:
@@ -611,6 +341,25 @@ def _in_progress_bidi_new_blocking_unary(channel):
         print('waiting to join')
         process.join()
 
+def _channel(args):
+    target = '{}:{}'.format(args.server_host, args.server_port)
+    if args.use_tls:
+        if args.use_test_ca:
+            root_certificates = resources.test_root_certificates()
+        else:
+            root_certificates = None  # will load default roots.
+        channel_credentials = grpc.ssl_channel_credentials(root_certificates)
+        channel = grpc.secure_channel(target, channel_credentials, 
+            #((
+            #'grpc.ssl_target_name_override',
+            #args.server_host_override,
+           #),
+           None)
+    else:
+        channel = grpc.insecure_channel(target)
+    return channel
+
+
 @enum.unique
 class TestCase(enum.Enum):    
     # TODO: get errors from child callbacks without this
@@ -619,12 +368,23 @@ class TestCase(enum.Enum):
     logging.getLogger('grpc').addHandler(logging.StreamHandler(sys.stdout))
 
     ASYNC_UNARY_SAME_CHANNEL = 'async_unary_same_channel'
+    ASYNC_UNARY_NEW_CHANNEL = 'async_unary_new_channel'
+    BLOCKING_UNARY_SAME_CHANNEL = 'blocking_unary_same_channel'
+    BLOCKING_UNARY_NEW_CHANNEL = 'blocking_unary_new_channel'
     CONNECTIVITY_WATCH = 'connectivity_watch'
     IN_PROGRESS_BIDI_CONTINUE_CALL = 'in_progress_bidi_continue_call'
 
-    def run_test(self, channel, args):
+    def run_test(self, args):
+        channel = _channel(args)
+        print self
         if self is TestCase.ASYNC_UNARY_SAME_CHANNEL:
             _async_unary_same_channel(channel)
+        elif self is TestCase.ASYNC_UNARY_NEW_CHANNEL:
+            _async_unary_new_channel(channel, args)
+        elif self is TestCase.BLOCKING_UNARY_SAME_CHANNEL:
+            _blocking_unary_same_channel(channel)
+        elif self is TestCase.BLOCKING_UNARY_NEW_CHANNEL:
+            _blocking_unary_new_channel(channel, args)
         elif self is TestCase.CONNECTIVITY_WATCH:
             _connectivity_watch(channel)
         elif self is TestCase.IN_PROGRESS_BIDI_CONTINUE_CALL:
@@ -632,3 +392,4 @@ class TestCase(enum.Enum):
         else:
             raise NotImplementedError(
                 'Test case "%s" not implemented!' % self.name)
+        channel.close()
