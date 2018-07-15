@@ -16,6 +16,7 @@
 import logging
 import os
 import threading
+import traceback
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -102,14 +103,29 @@ def fork_managed_thread(target, args=()):
 
 
 def block_if_fork_in_progress(postfork_state_to_reset=None):
+    print('blocking_if_fork_in_progress')
+    print('thread count: ', _fork_state.active_thread_count._num_active_threads)
+    traceback.print_stack()
     with _fork_state.fork_in_progress_condition:
         if not _fork_state.fork_in_progress:
+            print('not blocking')
             return
+        print('blocking')
         if postfork_state_to_reset is not None:
             _fork_state.postfork_states_to_reset.append(postfork_state_to_reset)
         _fork_state.active_thread_count.decrement()
         _fork_state.fork_in_progress_condition.wait()
         _fork_state.active_thread_count.increment()
+
+
+
+def enter_user_request_generator():
+    _fork_state.active_thread_count.decrement()
+
+
+def return_from_user_request_generator():
+    _fork_state.active_thread_count.increment()
+
 
 
 def get_fork_epoch():

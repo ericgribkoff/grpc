@@ -29,5 +29,13 @@ def block_if_fork_in_progress():
     pass
 
 
+def enter_user_request_generator():
+	pass
+
+
+def return_from_user_request_generator():
+	pass
+
+
 def get_fork_epoch():
 	return 0
