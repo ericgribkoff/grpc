@@ -35,6 +35,25 @@ from src.proto.grpc.testing import messages_pb2
 from src.proto.grpc.testing import test_pb2_grpc
 
 
+def _channel(args):
+    target = '{}:{}'.format(args.server_host, args.server_port)
+    if args.use_tls:
+        if args.use_test_ca:
+            root_certificates = resources.test_root_certificates()
+        else:
+            root_certificates = None  # will load default roots.
+        channel_credentials = grpc.ssl_channel_credentials(root_certificates)
+        channel = grpc.secure_channel(target, channel_credentials, 
+            #((
+            #'grpc.ssl_target_name_override',
+            #args.server_host_override,
+           #),
+           None)
+    else:
+        channel = grpc.insecure_channel(target)
+    return channel
+
+
 def _validate_payload_type_and_length(response, expected_type, expected_length):
     if response.payload.type is not expected_type:
         raise ValueError('expected payload type %s, got %s' %
@@ -53,14 +72,16 @@ def _async_unary(stub):
     response_future = stub.UnaryCall.future(request)
     response = response_future.result()
     _validate_payload_type_and_length(response, messages_pb2.COMPRESSABLE, size)
-    return response
 
 
-def _empty_unary(stub):
-    response = stub.EmptyCall(empty_pb2.Empty())
-    if not isinstance(response, empty_pb2.Empty):
-        raise TypeError(
-            'response is of type "%s", not empty_pb2.Empty!' % type(response))
+def _blocking_unary(stub):
+    size = 314159
+    request = messages_pb2.SimpleRequest(
+        response_type=messages_pb2.COMPRESSABLE,
+        response_size=size,
+        payload=messages_pb2.Payload(body=b'\x00' * 271828))    
+    response = stub.UnaryCall(request)
+    _validate_payload_type_and_length(response, messages_pb2.COMPRESSABLE, size)
 
 
 class _Pipe(object):
@@ -104,13 +125,15 @@ class _Pipe(object):
 
 class _ChildProcess(object):
 
-    def __init__(self, task):
+    def __init__(self, task, args=None):
+        if args is None:
+            args = ()
         self._exceptions = multiprocessing.Queue()
         def record_exceptions():
             try:
-                task()
+                task(*args)
             except Exception as e:
-                self._exceptions.put(str(e))
+                self._exceptions.put(e)
         self._process = multiprocessing.Process(target=record_exceptions)
 
     def start(self):
@@ -154,13 +177,13 @@ def _async_unary_new_channel(channel, args):
 
 def _blocking_unary_same_channel(channel):
     def child_target():
-        _empty_unary(stub)
+        _blocking_unary(stub)
 
     stub = test_pb2_grpc.TestServiceStub(channel)
-    _empty_unary(stub)
+    _blocking_unary(stub)
     child_process = _ChildProcess(child_target)
     child_process.start()
-    _empty_unary(stub)
+    _blocking_unary(stub)
     child_process.finish()
 
 
@@ -168,14 +191,14 @@ def _blocking_unary_new_channel(channel, args):
     def child_target():
         child_channel = _channel(args)
         child_stub = test_pb2_grpc.TestServiceStub(channel)
-        _empty_unary(child_stub)
+        _blocking_unary(child_stub)
         child_channel.close()
 
     stub = test_pb2_grpc.TestServiceStub(channel)
-    _empty_unary(stub)
+    _blocking_unary(stub)
     child_process = _ChildProcess(child_target)
     child_process.start()
-    _empty_unary(stub)
+    _blocking_unary(stub)
     child_process.finish()
 
 
@@ -207,8 +230,7 @@ def _connectivity_watch(channel):
         raise ValueError('Channel did not move to READY')
     child_process.finish()
 
-
-def _in_progress_bidi_continue_call(channel):
+def _ping_pong_with_child_processes_after_first_response(channel, args, child_target):
     request_response_sizes = (
         31415,
         9,
@@ -221,30 +243,9 @@ def _in_progress_bidi_continue_call(channel):
         1828,
         45904,
     )
-
     stub = test_pb2_grpc.TestServiceStub(channel)
     pipe = _Pipe()
     parent_bidi_call = stub.FullDuplexCall(pipe)
-
-    def child_target():
-        try:
-            parent_bidi_call.result(timeout=1)
-            raise ValueError('Received result on inherited call')
-        except grpc.FutureTimeoutError:
-            pass
-        request = messages_pb2.StreamingOutputCallRequest(
-            response_type=messages_pb2.COMPRESSABLE,
-            response_parameters=(
-                messages_pb2.ResponseParameters(size=1),),
-            payload=messages_pb2.Payload(body=b'\x00' * 1))
-        _async_unary(stub)
-        inherited_code = parent_bidi_call.code()
-        inherited_details = parent_bidi_call.details()
-        if inherited_code != grpc.StatusCode.UNKNOWN:
-            raise ValueError('Expected inherited code UNKNOWN, got %s' % inherited_code)
-        if inherited_details != 'Stream removed':
-            raise ValueError('Expected inherited details Stream removed, got %s' % inherited_details)
-
     child_processes = []
     first_message_received = False
     for response_size, payload_size in zip(request_response_sizes,
@@ -256,116 +257,78 @@ def _in_progress_bidi_continue_call(channel):
             payload=messages_pb2.Payload(body=b'\x00' * payload_size))
         pipe.add(request)
         if first_message_received:
-            child_process = _ChildProcess(child_target)
+            child_process = _ChildProcess(child_target, (parent_bidi_call, channel, args))
             child_process.start()
             child_processes.append(child_process)           
         response = next(parent_bidi_call)
         first_message_received = True
-        child_process = _ChildProcess(child_target)
+        child_process = _ChildProcess(child_target, (parent_bidi_call, channel, args))
         child_process.start()
         child_processes.append(child_process)
         _validate_payload_type_and_length(
             response, messages_pb2.COMPRESSABLE, response_size)
     pipe.close()
-    child_process = _ChildProcess(child_target)
+    child_process = _ChildProcess(child_target, (parent_bidi_call, channel, args))
     child_process.start()
     child_processes.append(child_process)
     for child_process in child_processes:
         child_process.finish()
 
+def _in_progress_bidi_continue_call(channel):
+    def child_target(parent_bidi_call, parent_channel, args):
+        stub = test_pb2_grpc.TestServiceStub(parent_channel)
+        try:
+            parent_bidi_call.result(timeout=1)
+            raise ValueError('Received result on inherited call')
+        except grpc.FutureTimeoutError:
+            pass
+        _async_unary(stub)
+        inherited_code = parent_bidi_call.code()
+        inherited_details = parent_bidi_call.details()
+        if inherited_code != grpc.StatusCode.UNKNOWN:
+            raise ValueError('Expected inherited code UNKNOWN, got %s' % inherited_code)
+        if inherited_details != 'Stream removed':
+            raise ValueError('Expected inherited details Stream removed, got %s' % inherited_details)
 
-def _in_progress_bidi_new_blocking_unary(channel):
-    request_response_sizes = (
-        31415,
-        9,
-        2653,
-        58979,
-    )
-    request_payload_sizes = (
-        27182,
-        8,
-        1828,
-        45904,
-    )
+    _ping_pong_with_child_processes_after_first_response(channel, None, child_target)
 
-    with _Pipe() as pipe:
+
+def _in_progress_bidi_same_channel_async_call(channel):
+    def child_target(parent_bidi_call, parent_channel, args):
+        stub = test_pb2_grpc.TestServiceStub(parent_channel)
+        _async_unary(stub)
+
+    _ping_pong_with_child_processes_after_first_response(channel, None, child_target)
+
+
+def _in_progress_bidi_same_channel_blocking_call(channel):
+    def child_target(parent_bidi_call, parent_channel, args):
+        stub = test_pb2_grpc.TestServiceStub(parent_channel)
+        _blocking_unary(stub)
+
+    _ping_pong_with_child_processes_after_first_response(channel, None, child_target)
+
+
+def _in_progress_bidi_new_channel_async_call(channel, args):
+    def child_target(parent_bidi_call, parent_channel, args):
+        channel = _channel(args)
         stub = test_pb2_grpc.TestServiceStub(channel)
-        response_iterator = stub.FullDuplexCall(pipe)
-        i = 0
-        for response_size, payload_size in zip(request_response_sizes,
-                                               request_payload_sizes):
-            request = messages_pb2.StreamingOutputCallRequest(
-                response_type=messages_pb2.COMPRESSABLE,
-                response_parameters=(
-                    messages_pb2.ResponseParameters(size=response_size),),
-                payload=messages_pb2.Payload(body=b'\x00' * payload_size))
-            pipe.add(request)
-            if i == 2:
-                # fork
-                def child_process(child_error_queue):
-                    try:
-                        print('child process')
-                        #pass
-                        #response = next(response_iterator)
-                        # child_states = []
-                        # def child_callback(state):
-                        #         child_states.append(state)
-                        # channel.subscribe(child_callback)
-                        time.sleep(2)
-                        #_large_unary_common_behavior(stub, False, False, None)
-                        #print('large unary sent')
+        _async_unary(stub)
 
-                        response = stub.EmptyCall(empty_pb2.Empty())
-                        print('got response: ', response)
-                        # if len(child_states) < 2 or child_states[-1] != grpc.ChannelConnectivity.READY:
-                        #     raise ValueError('Channel did not move to READY')
-                        # if len(parent_states) > 1:
-                        #     raise ValueError('Received connectivity updates on parent callback')
-                    except Exception as e:
-                        child_error_queue.put(str(e))
-                child_error_queue = multiprocessing.Queue()
-                process = multiprocessing.Process(target=child_process, args=(child_error_queue,))
-                print('forking')
-                process.start()
-            response = next(response_iterator)
-            _validate_payload_type_and_length(
-                response, messages_pb2.COMPRESSABLE, response_size)
-            i += 1
+    _ping_pong_with_child_processes_after_first_response(channel, args, child_target)
 
-                # print('waiting to join')
-                # process.join()
-        pipe.close()
-        print('main process done')
-        print('\n\n\n\n')
-        print(response_iterator.code())
-        print('waiting to join')
-        process.join()
 
-def _channel(args):
-    target = '{}:{}'.format(args.server_host, args.server_port)
-    if args.use_tls:
-        if args.use_test_ca:
-            root_certificates = resources.test_root_certificates()
-        else:
-            root_certificates = None  # will load default roots.
-        channel_credentials = grpc.ssl_channel_credentials(root_certificates)
-        channel = grpc.secure_channel(target, channel_credentials, 
-            #((
-            #'grpc.ssl_target_name_override',
-            #args.server_host_override,
-           #),
-           None)
-    else:
-        channel = grpc.insecure_channel(target)
-    return channel
+def _in_progress_bidi_new_channel_blocking_call(channel, args):
+    def child_target(parent_bidi_call, parent_channel, args):
+        channel = _channel(args)
+        stub = test_pb2_grpc.TestServiceStub(channel)
+        _blocking_unary(stub)
+
+    _ping_pong_with_child_processes_after_first_response(channel, args, child_target)
 
 
 @enum.unique
-class TestCase(enum.Enum):    
-    # TODO: get errors from child callbacks without this
-    import logging
-    import sys
-    logging.getLogger('grpc').addHandler(logging.StreamHandler(sys.stdout))
+class TestCase(enum.Enum):
 
     ASYNC_UNARY_SAME_CHANNEL = 'async_unary_same_channel'
     ASYNC_UNARY_NEW_CHANNEL = 'async_unary_new_channel'
@@ -373,10 +336,19 @@ class TestCase(enum.Enum):
     BLOCKING_UNARY_NEW_CHANNEL = 'blocking_unary_new_channel'
     CONNECTIVITY_WATCH = 'connectivity_watch'
     IN_PROGRESS_BIDI_CONTINUE_CALL = 'in_progress_bidi_continue_call'
+    IN_PROGRESS_BIDI_SAME_CHANNEL_ASYNC_CALL = 'in_progress_bidi_same_channel_async_call'
+    IN_PROGRESS_BIDI_SAME_CHANNEL_BLOCKING_CALL = 'in_progress_bidi_same_channel_blocking_call'
+    IN_PROGRESS_BIDI_NEW_CHANNEL_ASYNC_CALL = 'in_progress_bidi_new_channel_async_call'
+    IN_PROGRESS_BIDI_NEW_CHANNEL_BLOCKING_CALL = 'in_progress_bidi_new_channel_blocking_call'
+
 
     def run_test(self, args):
+        # TODO: get errors from child callbacks without this
+        import logging
+        import sys
+        logging.getLogger('grpc').addHandler(logging.StreamHandler(sys.stdout))
+
         channel = _channel(args)
-        print self
         if self is TestCase.ASYNC_UNARY_SAME_CHANNEL:
             _async_unary_same_channel(channel)
         elif self is TestCase.ASYNC_UNARY_NEW_CHANNEL:
@@ -389,6 +361,14 @@ class TestCase(enum.Enum):
             _connectivity_watch(channel)
         elif self is TestCase.IN_PROGRESS_BIDI_CONTINUE_CALL:
             _in_progress_bidi_continue_call(channel)
+        elif self is TestCase.IN_PROGRESS_BIDI_SAME_CHANNEL_ASYNC_CALL:
+            _in_progress_bidi_same_channel_async_call(channel)
+        elif self is TestCase.IN_PROGRESS_BIDI_SAME_CHANNEL_BLOCKING_CALL:
+            _in_progress_bidi_same_channel_blocking_call(channel)
+        elif self is TestCase.IN_PROGRESS_BIDI_NEW_CHANNEL_ASYNC_CALL:
+            _in_progress_bidi_new_channel_async_call(channel, args)
+        elif self is TestCase.IN_PROGRESS_BIDI_NEW_CHANNEL_BLOCKING_CALL:
+            _in_progress_bidi_new_channel_blocking_call(channel, args)
         else:
             raise NotImplementedError(
                 'Test case "%s" not implemented!' % self.name)

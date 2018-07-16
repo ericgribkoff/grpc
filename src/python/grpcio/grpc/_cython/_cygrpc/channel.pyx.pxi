@@ -145,8 +145,10 @@ cdef _cancel(
 
 cdef _next_call_event(
     _ChannelState channel_state, grpc_completion_queue *c_completion_queue,
-    on_success):
-  tag, event = _latent_event(c_completion_queue, time.time()+1)
+    on_success, deadline):
+  tag, event = _latent_event(c_completion_queue, deadline)
+  print(tag)
+  print(event)
   with channel_state.condition:
     on_success(tag)
     channel_state.condition.notify_all() # TODO: handle queue timeout
@@ -303,7 +305,7 @@ cdef class SegregatedCall:
       _process_segregated_call_tag(
           self._channel_state, self._call_state, self._c_completion_queue, tag)
     return _next_call_event(
-        self._channel_state, self._c_completion_queue, on_success)
+        self._channel_state, self._c_completion_queue, on_success, None)
 
 
 cdef SegregatedCall _segregated_call(
@@ -434,7 +436,7 @@ cdef class Channel:
       if tag is not None:
         _process_integrated_call_tag(self._state, tag)
     return _next_call_event(
-        self._state, self._state.c_call_completion_queue, on_success)
+        self._state, self._state.c_call_completion_queue, on_success, time.time()+1)
 
   def segregated_call(
       self, int flags, method, host, object deadline, object metadata,
