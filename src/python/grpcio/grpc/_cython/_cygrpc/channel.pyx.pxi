@@ -147,8 +147,6 @@ cdef _next_call_event(
     _ChannelState channel_state, grpc_completion_queue *c_completion_queue,
     on_success, deadline):
   tag, event = _latent_event(c_completion_queue, deadline)
-  print(tag)
-  print(event)
   with channel_state.condition:
     on_success(tag)
     channel_state.condition.notify_all() # TODO: handle queue timeout

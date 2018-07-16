@@ -280,14 +280,10 @@ class _Rendezvous(grpc.RpcError, grpc.Future, grpc.Call):
 
     def result(self, timeout=None):
         until = None if timeout is None else time.time() + timeout
-        print('obtaining condition')
         with self._state.condition:
             while True:
-                print('in loop again', self._state.code, self._state.cancelled)
                 if self._state.code is None:
-                    print('waiting until ', until)
                     _wait_once_until(self._state.condition, until)
-                    print('done waiting')
                 elif self._state.code is grpc.StatusCode.OK:
                     return self._state.response
                 elif self._state.cancelled:
@@ -744,13 +740,10 @@ def _channel_managed_call_management(state):
             operations,
             event_handler,
         ) for operations in operationses)
-        print('obtaining managed call lock')
         with state.lock:
             call = state.channel.integrated_call(flags, method, host, deadline,
                                                  metadata, credentials,
                                                  operationses_and_tags)
-            print('new managed call')
-            print('state.managed_calls: ', state.managed_calls)
             if state.managed_calls == 0:
                 state.managed_calls = 1
                 _run_channel_spin_thread(state)

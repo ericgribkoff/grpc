@@ -212,6 +212,8 @@ def _connectivity_watch(channel):
         child_states = []
         channel.subscribe(child_connectivity_callback)
         _async_unary(stub)
+        channel.unsubscribe(child_connectivity_callback)
+        channel.close()
         if len(child_states) < 2 or child_states[-1] != grpc.ChannelConnectivity.READY:
             raise ValueError('Channel did not move to READY')
         if len(parent_states) > 1:
@@ -230,7 +232,12 @@ def _connectivity_watch(channel):
         raise ValueError('Channel did not move to READY')
     child_process.finish()
 
-def _ping_pong_with_child_processes_after_first_response(channel, args, child_target):
+    # Need to unsubscribe or _channel.py in _poll_connectivity triggers a 
+    # "Cannot invoke RPC on closed channel!" error.
+    # TODO(ericgribkoff) Fix issue with channel.close() and connectivity polling
+    channel.unsubscribe(parent_connectivity_callback)
+
+def _ping_pong_with_child_processes_after_first_response(channel, args, child_target, run_after_close=True):
     request_response_sizes = (
         31415,
         9,
@@ -268,29 +275,36 @@ def _ping_pong_with_child_processes_after_first_response(channel, args, child_ta
         _validate_payload_type_and_length(
             response, messages_pb2.COMPRESSABLE, response_size)
     pipe.close()
-    child_process = _ChildProcess(child_target, (parent_bidi_call, channel, args))
-    child_process.start()
-    child_processes.append(child_process)
+    if run_after_close:
+        child_process = _ChildProcess(child_target, (parent_bidi_call, channel, args))
+        child_process.start()
+        child_processes.append(child_process)
     for child_process in child_processes:
         child_process.finish()
 
 def _in_progress_bidi_continue_call(channel):
     def child_target(parent_bidi_call, parent_channel, args):
         stub = test_pb2_grpc.TestServiceStub(parent_channel)
-        try:
-            parent_bidi_call.result(timeout=1)
-            raise ValueError('Received result on inherited call')
-        except grpc.FutureTimeoutError:
-            pass
+        # The parent call may have finished before forking
+        parent_call_already_done = parent_bidi_call.done()
+        if not parent_call_already_done:
+            try:
+                parent_bidi_call.result(timeout=1)
+                raise ValueError('Received result on inherited call')
+            except grpc.FutureTimeoutError:
+                pass
         _async_unary(stub)
-        inherited_code = parent_bidi_call.code()
-        inherited_details = parent_bidi_call.details()
-        if inherited_code != grpc.StatusCode.UNKNOWN:
-            raise ValueError('Expected inherited code UNKNOWN, got %s' % inherited_code)
-        if inherited_details != 'Stream removed':
-            raise ValueError('Expected inherited details Stream removed, got %s' % inherited_details)
+        if not parent_call_already_done:
+            inherited_code = parent_bidi_call.code()
+            inherited_details = parent_bidi_call.details()
+            if inherited_code != grpc.StatusCode.UNKNOWN:
+                raise ValueError('Expected inherited code UNKNOWN, got %s' % inherited_code)
+            if inherited_details != 'Stream removed':
+                raise ValueError('Expected inherited details Stream removed, got %s' % inherited_details)
 
-    _ping_pong_with_child_processes_after_first_response(channel, None, child_target)
+    # Don't run child_target after closing the parent call, as the call may have received a status from the
+    # server before fork occurs.
+    _ping_pong_with_child_processes_after_first_response(channel, None, child_target, run_after_close=False)
 
 
 def _in_progress_bidi_same_channel_async_call(channel):
@@ -330,11 +344,11 @@ def _in_progress_bidi_new_channel_blocking_call(channel, args):
 @enum.unique
 class TestCase(enum.Enum):
 
+    CONNECTIVITY_WATCH = 'connectivity_watch'
     ASYNC_UNARY_SAME_CHANNEL = 'async_unary_same_channel'
     ASYNC_UNARY_NEW_CHANNEL = 'async_unary_new_channel'
     BLOCKING_UNARY_SAME_CHANNEL = 'blocking_unary_same_channel'
     BLOCKING_UNARY_NEW_CHANNEL = 'blocking_unary_new_channel'
-    CONNECTIVITY_WATCH = 'connectivity_watch'
     IN_PROGRESS_BIDI_CONTINUE_CALL = 'in_progress_bidi_continue_call'
     IN_PROGRESS_BIDI_SAME_CHANNEL_ASYNC_CALL = 'in_progress_bidi_same_channel_async_call'
     IN_PROGRESS_BIDI_SAME_CHANNEL_BLOCKING_CALL = 'in_progress_bidi_same_channel_blocking_call'
@@ -347,7 +361,7 @@ class TestCase(enum.Enum):
         import logging
         import sys
         logging.getLogger('grpc').addHandler(logging.StreamHandler(sys.stdout))
-
+        print("Running %s" % self)
         channel = _channel(args)
         if self is TestCase.ASYNC_UNARY_SAME_CHANNEL:
             _async_unary_same_channel(channel)
