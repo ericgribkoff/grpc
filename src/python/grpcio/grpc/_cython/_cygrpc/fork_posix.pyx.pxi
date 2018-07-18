@@ -154,10 +154,20 @@ class _ActiveThreadCount(object):
                 self._condition.notify_all()
 
     def await_zero_threads(self, timeout_secs):
+        end_time = time.time() + timeout_secs
+        wait_time = timeout_secs
         with self._condition:
-            if self._num_active_threads > 0:
-                self._condition.wait(timeout_secs)
-            return self._num_active_threads == 0
+            while True:
+                if self._num_active_threads > 0:
+                    self._condition.wait(wait_time)
+                if self._num_active_threads == 0:
+                    return True
+                # Thread count may have increased before this re-obtains the
+                # lock after a notify(). Wait again until timeout_secs has 
+                # elapsed.
+                wait_time = end_time - time.time()
+                if wait_time <= 0:
+                    return False
 
 
 class _ForkState(object):

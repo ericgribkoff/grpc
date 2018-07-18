@@ -51,6 +51,8 @@ void grpc_prefork() {
   grpc_core::ExecCtx exec_ctx;
   skipped_handler = true;
   if (!grpc_is_initialized()) {
+    gpr_log(GPR_ERROR,
+            "gRPC not initialized");
     return;
   }
   if (!grpc_core::Fork::Enabled()) {
@@ -60,7 +62,7 @@ void grpc_prefork() {
     return;
   }
   if (!grpc_core::Fork::BlockExecCtx()) {
-    gpr_log(GPR_INFO,
+    gpr_log(GPR_ERROR,
             "Other threads are currently calling into gRPC, skipping fork() "
             "handlers");
     return;
@@ -70,6 +72,7 @@ void grpc_prefork() {
   grpc_core::ExecCtx::Get()->Flush();
   grpc_core::Fork::AwaitThreads();
   skipped_handler = false;
+  gpr_log(GPR_ERROR, "pre-fork handler ran");
 }
 
 void grpc_postfork_parent() {
@@ -95,6 +98,7 @@ void grpc_postfork_child() {
     }
     grpc_timer_manager_set_threading(true);
     grpc_executor_set_threading(true);
+    gpr_log(GPR_ERROR, "child post-fork handler ran");
   }
 }
 
