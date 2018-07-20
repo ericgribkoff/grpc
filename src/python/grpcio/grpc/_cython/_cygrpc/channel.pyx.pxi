@@ -14,6 +14,7 @@
 
 cimport cpython
 
+import os
 import threading
 import time
 
@@ -263,11 +264,13 @@ cdef IntegratedCall _integrated_call(
   def on_success(started_tags):
     for started_tag in started_tags:
       state.integrated_call_states[started_tag] = call_state
+  print('(%d) about to invoke _call ' % os.getpid())
 
   _call(
       state, call_state, state.c_call_completion_queue, on_success, flags,
       method, host, deadline, credentials, operationses_and_user_tags, metadata)
 
+  print('(%d) _call returned ' % os.getpid())
   return IntegratedCall(state, call_state)
 
 

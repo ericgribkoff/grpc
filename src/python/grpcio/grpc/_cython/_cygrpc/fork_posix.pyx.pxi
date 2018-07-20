@@ -60,15 +60,22 @@ cdef void __postfork_parent() nogil:
 
 cdef void __postfork_child() nogil:
     with gil:
+        # print('(%d) postfork_child begun ' % os.getpid())
         # Thread could be holding the fork_in_progress_condition inside of
         # block_if_fork_in_progress() when fork occurs. Reset the lock here.
         _fork_state.fork_in_progress_condition = threading.Condition()
+        # A thread leaving user request generator may increment the thread count
+        # after the fork handler exits before fork occurs. This is safe, since
+        # the thread will then block, but we must reset the active thread count
+        # (and its lock) in the child.
+        _fork_state.active_thread_count = _ActiveThreadCount()
         with _fork_state.fork_in_progress_condition:
             for state_to_reset in _fork_state.postfork_states_to_reset:
                 state_to_reset.reset_postfork_child()
             _fork_state.fork_epoch += 1
             _fork_state.post_fork_child_cleanup_callbacks = []
-            _fork_state.fork_in_progress = False
+            _fork_state.fork_in_progress = False            
+            # print('(%d) postfork_child completed ' % os.getpid())
 
 
 def fork_handlers_and_grpc_init():
@@ -104,7 +111,9 @@ class ForkManagedThread(object):
 
     def start(self):
         if _GRPC_ENABLE_FORK_SUPPORT:
-            _fork_state.active_thread_count.increment()
+            # print('(%d) incrementing active thread count ' % os.getpid())
+            _fork_state.active_thread_count.increment() # lock is held here somehow
+            # print('(%d) done incrementing active thread count ' % os.getpid())
         self._thread.start()
 
     def join(self):
@@ -131,6 +140,7 @@ def enter_user_request_generator():
 def return_from_user_request_generator():
     if _GRPC_ENABLE_FORK_SUPPORT:
         _fork_state.active_thread_count.increment()
+        block_if_fork_in_progress()
 
 
 def get_fork_epoch():

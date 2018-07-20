@@ -1,0 +1,10 @@
+Metadata-Version: 1.0
+Name: grpcio-testing
+Version: 1.14.0.dev0
+Summary: Testing utilities for gRPC Python
+Home-page: https://grpc.io
+Author: The gRPC Authors
+Author-email: grpc-io@googlegroups.com
+License: Apache License 2.0
+Description: UNKNOWN
+Platform: UNKNOWN

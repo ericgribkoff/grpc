@@ -57,8 +57,11 @@ def _async_unary(stub):
         response_type=messages_pb2.COMPRESSABLE,
         response_size=size,
         payload=messages_pb2.Payload(body=b'\x00' * 271828))
+    print('(%d) about to create future' % os.getpid())
     response_future = stub.UnaryCall.future(request)
+    print('(%d) created future' % os.getpid())
     response = response_future.result()
+    print('(%d) got future result' % os.getpid())
     _validate_payload_type_and_length(response, messages_pb2.COMPRESSABLE, size)
 
 
@@ -68,7 +71,9 @@ def _blocking_unary(stub):
         response_type=messages_pb2.COMPRESSABLE,
         response_size=size,
         payload=messages_pb2.Payload(body=b'\x00' * 271828))
+    print("(%d) sending blocking unary" % os.getpid())
     response = stub.UnaryCall(request)
+    print("(%d) got blocking unary result" % os.getpid())
     _validate_payload_type_and_length(response, messages_pb2.COMPRESSABLE, size)
 
 
@@ -119,9 +124,12 @@ class _ChildProcess(object):
         self._exceptions = multiprocessing.Queue()
 
         def record_exceptions():
+            print("in record_exceptions for %d" % os.getpid())
+            _LOGGER.info("\033[94m child pid: %d \033[0m", os.getpid())
             try:
                 task(*args)
             except Exception as e:  # pylint: disable=broad-except
+                print "exception!"
                 self._exceptions.put(e)
 
         self._process = multiprocessing.Process(target=record_exceptions)
@@ -130,6 +138,9 @@ class _ChildProcess(object):
         self._process.start()
 
     def finish(self):
+        print('attempting to join')
+        print('_process.is_alive()', self._process.is_alive())
+        print('_process.exitcode', self._process.exitcode)
         self._process.join()
         try:
             exception = self._exceptions.get(block=False)
@@ -202,22 +213,45 @@ def _blocking_unary_new_channel(channel, args):
 def _connectivity_watch(channel):
 
     def child_target():
+        # TODO: this should just use an event (on READY) and ignore other updates, no need for Queue
+        # event = threading.Event()
 
         def child_connectivity_callback(state):
+            # print('(child) state: ', state)
             child_states.append(state)
+            # event.set()
+
+        # print('polling before subscribe: ', channel._connectivity_state.polling)
 
         child_states = []
         channel.subscribe(child_connectivity_callback)
         _async_unary(stub)
-        channel.unsubscribe(child_connectivity_callback)
-        channel.close()
+        slept = False
+        # if len(child_states
+        #       ) < 2 or child_states[-1] != grpc.ChannelConnectivity.READY:
+        #     # print('not ready, sleeping')
+        #     slept = True
+        #     time.sleep(2)
+        #     if len(child_states
+        #           ) < 2 or child_states[-1] != grpc.ChannelConnectivity.READY:
+        #         # print('still not ready, sleeping again')
+        #         time.sleep(2)
+        # print('polling: ', channel._connectivity_state.polling)
+        # print('waiting for event')
+        # event.wait()
+        # print('done waiting')
         if len(child_states
               ) < 2 or child_states[-1] != grpc.ChannelConnectivity.READY:
             raise ValueError('Channel did not move to READY')
+        # if slept:
+        #     raise ValueError('had to sleep to get test to pass!')
         if len(parent_states) > 1:
             raise ValueError('Received connectivity updates on parent callback')
+        channel.unsubscribe(child_connectivity_callback)
+        channel.close()
 
     def parent_connectivity_callback(state):
+        # print('(parent) state: ', state)
         parent_states.append(state)
 
     parent_states = []
@@ -226,15 +260,19 @@ def _connectivity_watch(channel):
     child_process = _ChildProcess(child_target)
     child_process.start()
     _async_unary(stub)
-    if len(parent_states
-          ) < 2 or parent_states[-1] != grpc.ChannelConnectivity.READY:
-        raise ValueError('Channel did not move to READY')
-    child_process.finish()
+
+    # possible we can unsubscribe before the poll connectivity thread receives
+    # the connectivity updates?
 
     # Need to unsubscribe or _channel.py in _poll_connectivity triggers a
     # "Cannot invoke RPC on closed channel!" error.
     # TODO(ericgribkoff) Fix issue with channel.close() and connectivity polling
     channel.unsubscribe(parent_connectivity_callback)
+
+    if len(parent_states
+          ) < 2 or parent_states[-1] != grpc.ChannelConnectivity.READY:
+        raise ValueError('Channel did not move to READY')
+    child_process.finish()
 
 
 def _ping_pong_with_child_processes_after_first_response(
@@ -284,7 +322,9 @@ def _ping_pong_with_child_processes_after_first_response(
         child_process.start()
         child_processes.append(child_process)
     for child_process in child_processes:
+        print('parent calling finish() on child pid: ', child_process._process.pid)
         child_process.finish()
+    print('parent done')
 
 
 def _in_progress_bidi_continue_call(channel):
@@ -292,16 +332,21 @@ def _in_progress_bidi_continue_call(channel):
     def child_target(parent_bidi_call, parent_channel, args):
         stub = test_pb2_grpc.TestServiceStub(parent_channel)
         # The parent call may have finished before forking
+        print('(%d) checking if call done' % os.getpid())
         parent_call_already_done = parent_bidi_call.done()
         if not parent_call_already_done:
+            print('(%d) call not done' % os.getpid())
             try:
                 parent_bidi_call.result(timeout=1)
+                print('(%d) result finished' % os.getpid())
                 raise ValueError('Received result on inherited call')
             except grpc.FutureTimeoutError:
                 pass
         _async_unary(stub)
         if not parent_call_already_done:
+            print('(%d) getting code' % os.getpid())
             inherited_code = parent_bidi_call.code()
+            print('(%d) got code' % os.getpid())
             inherited_details = parent_bidi_call.details()
             if inherited_code != grpc.StatusCode.UNKNOWN:
                 raise ValueError(
@@ -374,7 +419,8 @@ class TestCase(enum.Enum):
     IN_PROGRESS_BIDI_NEW_CHANNEL_BLOCKING_CALL = 'in_progress_bidi_new_channel_blocking_call'
 
     def run_test(self, args):
-        _LOGGER.info("Running %s", self)
+        _LOGGER.info("\033[94m Running %s \033[0m ", self)
+        _LOGGER.info("\033[94m parent pid: %d \033[0m", os.getpid())
         channel = _channel(args)
         if self is TestCase.ASYNC_UNARY_SAME_CHANNEL:
             _async_unary_same_channel(channel)

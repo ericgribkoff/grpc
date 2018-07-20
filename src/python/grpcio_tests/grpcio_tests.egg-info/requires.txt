@@ -1,0 +1,11 @@
+coverage>=4.0
+enum34>=1.0.4
+grpcio>=1.14.0.dev0
+grpcio-tools>=1.14.0.dev0
+grpcio-health-checking>=1.14.0.dev0
+oauth2client>=1.4.7
+protobuf>=3.5.2.post1
+six>=1.10
+google-auth>=1.0.0
+requests>=2.14.2
+futures>=2.2.0

@@ -14,6 +14,7 @@
 """Invocation-side implementation of gRPC Python."""
 
 import logging
+import os
 import sys
 import threading
 import time
@@ -164,12 +165,16 @@ def _handle_event(event, state, response_deserializer):
 def _event_handler(state, response_deserializer):
 
     def handle_event(event):
+        # print('(%d) handling event %s (epoch: %d)' % (os.getpid(), event, state.fork_epoch))
         with state.condition:
+            # print('(%d) got condition lock ' % os.getpid())
             callbacks = _handle_event(event, state, response_deserializer)
+            # print('(%d) done with _handle_event' % os.getpid())
             state.condition.notify_all()
             done = not state.due
         for callback in callbacks:
             callback()
+        # print('(%d) done with callbacks, done: %s ' % (os.getpid(), done)) 
         return done and state.fork_epoch >= cygrpc.get_fork_epoch()
 
     return handle_event
@@ -204,7 +209,6 @@ def _consume_request_iterator(request_iterator, state, call, request_serializer,
             finally:
                 if not return_from_user_request_generator_invoked:
                     cygrpc.return_from_user_request_generator()
-                    cygrpc.block_if_fork_in_progress()
             serialized_request = _common.serialize(request, request_serializer)
             with state.condition:
                 if state.code is None and not state.cancelled:
@@ -542,11 +546,14 @@ class _UnaryUnaryMultiCallable(grpc.UnaryUnaryMultiCallable):
         if state is None:
             raise rendezvous
         else:
+            # print('(%d) getting event handler' % os.getpid())
             event_handler = _event_handler(state, self._response_deserializer)
+            # print('(%d) getting managed call ' % os.getpid())
             call = self._managed_call(
                 0, self._method, None, deadline, metadata, None
                 if credentials is None else credentials._credentials,
                 (operations,), event_handler)
+            print('(%d) returning _Rendezvous ' % os.getpid())
             return _Rendezvous(state, call, self._response_deserializer,
                                deadline)
 
@@ -700,17 +707,23 @@ def _run_channel_spin_thread(state):
 
     def channel_spin():
         while True:
+            # print('(%d) thread running' % os.getpid())
             cygrpc.block_if_fork_in_progress(state)
+            # print('(%d) thread past block if' % os.getpid())
             event = state.channel.next_call_event()
             if event.completion_type == cygrpc.CompletionType.queue_timeout:
+                # print('here?')
+                # print('(%d) continuing on queue timeout ' % os.getpid())
                 continue
             call_completed = event.tag(event)
+            # print('(%d) call_completed: %s ' % (os.getpid(), call_completed))
             if call_completed:
                 with state.lock:
                     state.managed_calls -= 1
                     if state.managed_calls == 0:
                         return
 
+    # print('(%d) starting thread' % os.getpid())
     channel_spin_thread = cygrpc.ForkManagedThread(target=channel_spin)
     channel_spin_thread.setDaemon(True)
     channel_spin_thread.start()
@@ -744,14 +757,18 @@ def _channel_managed_call_management(state):
             event_handler,
         ) for operations in operationses)
         with state.lock:
+            # print('(%d) creating integrated_call ' % os.getpid())
             call = state.channel.integrated_call(flags, method, host, deadline,
                                                  metadata, credentials,
                                                  operationses_and_tags)
+            # print('(%d) created integrated_call ' % os.getpid())
             if state.managed_calls == 0:
                 state.managed_calls = 1
+                # print('(%d) calling _run_channel_spin_thread ' % os.getpid())
                 _run_channel_spin_thread(state)
             else:
                 state.managed_calls += 1
+            # print('(%d) returning call ' % os.getpid())
             return call
 
     return create
