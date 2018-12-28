@@ -136,6 +136,31 @@ class ChannelReadyFutureTest(unittest.TestCase):
         # Trigger process shutdown
         sys.exit(0)
 
+    # def test_daemon_crash_channel(self):
+    #     # server = test_common.test_server()
+    #     # port = server.add_insecure_port('[::]:0')
+    #     # server.start()
+    #     count = 0
+    #     channels_and_futures = []
+    #     while len(channels_and_futures) < 2100:
+    #         # channel = grpc.insecure_channel('localhost:{}'.format(port))
+    #         channel = grpc.insecure_channel('localhost:12345')
+    #         # ready_future = grpc.channel_ready_future(channel)
+    #         channel.subscribe(lambda _: True, try_to_connect=True)
+    #         channels_and_futures.append((channel, 0))
+    #         # with self.assertRaises(grpc.FutureTimeoutError):
+    #         #     ready_future.result(timeout=test_constants.SHORT_TIMEOUT)
+    #         # new_thread = threading.Thread(target=self.do_stuff)
+    #         # new_thread.daemon = True
+    #         # new_thread.start()
+    #         # count += 1
+    #     # time.sleep(100)
+    #     # while len(thread_has_run) < count*2:
+    #     #     time.sleep(0.001)
+    #     # server.stop(None)
+    #     # Trigger process shutdown
+    #     sys.exit(0)
+
     # def test_lonely_channel_connectivity(self):
     #     channel = grpc.insecure_channel('localhost:12345')
     #     callback = _Callback()
