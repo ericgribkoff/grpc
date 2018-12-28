@@ -126,7 +126,8 @@ class Runner(object):
     def run(self, suite):
         """See setuptools' test_runner setup argument for information."""
         # only run test cases with id starting with given prefix
-        testcase_filter = os.getenv('GRPC_PYTHON_TESTRUNNER_FILTER')
+        testcase_filter = 'unit._channel_ready_future_test' #'reflection._reflection_servicer_test'
+        # testcase_filter = os.getenv('GRPC_PYTHON_TESTRUNNER_FILTER')
         # os.environ['GRPC_TRACE'] = 'all'
         # os.environ['GRPC_VERBOSITY'] = 'debug'
         filtered_cases = []

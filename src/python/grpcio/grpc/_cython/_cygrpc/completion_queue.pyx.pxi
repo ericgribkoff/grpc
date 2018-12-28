@@ -13,6 +13,7 @@
 # limitations under the License.
 
 cimport cpython
+from libc.stdio cimport printf
 
 import threading
 import time
@@ -25,6 +26,7 @@ cdef grpc_event _next(grpc_completion_queue *c_completion_queue, deadline):
   cdef gpr_timespec c_timeout
   cdef gpr_timespec c_deadline
   c_increment = gpr_time_from_millis(_INTERRUPT_CHECK_PERIOD_MS, GPR_TIMESPAN)
+  # c_increment = gpr_time_from_micros(1, GPR_TIMESPAN)
   if deadline is None:
     c_deadline = gpr_inf_future(GPR_CLOCK_REALTIME)
   else:
@@ -70,6 +72,7 @@ cdef _latent_event(grpc_completion_queue *c_completion_queue, object deadline):
 cdef class CompletionQueue:
 
   def __cinit__(self, shutdown_cq=False):
+    # printf("cinit queue")
     cdef grpc_completion_queue_attributes c_attrs
     fork_handlers_and_grpc_init()
     if shutdown_cq:
@@ -106,16 +109,18 @@ cdef class CompletionQueue:
       pass
 
   def __dealloc__(self):
-    cdef gpr_timespec c_deadline
-    c_deadline = gpr_inf_future(GPR_CLOCK_REALTIME)
-    if self.c_completion_queue != NULL:
-      # Ensure shutdown
-      if not self.is_shutting_down:
-        grpc_completion_queue_shutdown(self.c_completion_queue)
-      # Pump the queue (All outstanding calls should have been cancelled)
-      while not self.is_shutdown:
-        event = grpc_completion_queue_next(
-            self.c_completion_queue, c_deadline, NULL)
-        self._interpret_event(event)
-      grpc_completion_queue_destroy(self.c_completion_queue)
-    grpc_shutdown()
+    # # printf("dealloc queue")
+    # cdef gpr_timespec c_deadline
+    # c_deadline = gpr_inf_future(GPR_CLOCK_REALTIME)
+    # if self.c_completion_queue != NULL:
+    #   # Ensure shutdown
+    #   if not self.is_shutting_down:
+    #     grpc_completion_queue_shutdown(self.c_completion_queue)
+    #   # Pump the queue (All outstanding calls should have been cancelled)
+    #   while not self.is_shutdown:
+    #     event = grpc_completion_queue_next(
+    #         self.c_completion_queue, c_deadline, NULL)
+    #     self._interpret_event(event)
+    #   grpc_completion_queue_destroy(self.c_completion_queue)
+    if self.c_completion_queue == NULL:
+      grpc_shutdown()

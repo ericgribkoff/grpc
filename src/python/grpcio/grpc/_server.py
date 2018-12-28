@@ -48,7 +48,7 @@ _CANCELLED = 'cancelled'
 
 _EMPTY_FLAGS = 0
 
-_DEALLOCATED_SERVER_CHECK_PERIOD_S = 1.0
+_DEALLOCATED_SERVER_CHECK_PERIOD_S = 10.0
 
 
 def _serialized_request(request_event):
@@ -859,10 +859,10 @@ class _Server(grpc.Server):
     def stop(self, grace):
         return _stop(self._state, grace)
 
-    def __del__(self):
-        # We can not grab a lock in __del__(), so set a flag to signal the
-        # serving daemon thread (if it exists) to initiate shutdown.
-        self._state.server_deallocated = True
+    # def __del__(self):
+    #     # We can not grab a lock in __del__(), so set a flag to signal the
+    #     # serving daemon thread (if it exists) to initiate shutdown.
+    #     self._state.server_deallocated = True
 
 
 def create_server(thread_pool, generic_rpc_handlers, interceptors, options,
