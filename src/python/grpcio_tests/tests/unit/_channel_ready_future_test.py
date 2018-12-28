@@ -119,14 +119,19 @@ class ChannelReadyFutureTest(unittest.TestCase):
 
     def test_daemon_crash(self):
         count = 0
-        for _ in range(1):
-            new_thread = threading.Thread(target=self.do_stuff)
-            new_thread.daemon = True
-            new_thread.start()
-            count += 1
-        # time.sleep(0.1)
-        while len(thread_has_run) < count*2:
-            time.sleep(0.001)
+        servers = []
+        while len(servers) < 1000:
+            server = test_common.test_server()
+            server.add_insecure_port('[::]:0')
+            server.start()
+            servers.append(server)
+            # new_thread = threading.Thread(target=self.do_stuff)
+            # new_thread.daemon = True
+            # new_thread.start()
+            # count += 1
+        # time.sleep(100)
+        # while len(thread_has_run) < count*2:
+        #     time.sleep(0.001)
         # time.sleep(1)
         # Trigger process shutdown
         sys.exit(0)
