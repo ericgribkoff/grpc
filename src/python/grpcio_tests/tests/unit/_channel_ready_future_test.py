@@ -76,22 +76,22 @@ class ChannelReadyFutureTest(unittest.TestCase):
             ports.append(server.add_insecure_port('[::]:0'))
             server.start()
 
-            channel = grpc.insecure_channel('localhost:12345')
-            callback = _Callback()
+            # channel = grpc.insecure_channel('localhost:12345')
+            # callback = _Callback()
 
-            ready_future = grpc.channel_ready_future(channel)
-            ready_future.add_done_callback(callback.accept_value)
-            with self.assertRaises(grpc.FutureTimeoutError):
-                ready_future.result(timeout=test_constants.SHORT_TIMEOUT)
-            self.assertFalse(ready_future.cancelled())
-            self.assertFalse(ready_future.done())
-            self.assertTrue(ready_future.running())
-            ready_future.cancel()
-            value_passed_to_callback = callback.block_until_called()
-            self.assertIs(ready_future, value_passed_to_callback)
-            self.assertTrue(ready_future.cancelled())
-            self.assertTrue(ready_future.done())
-            self.assertFalse(ready_future.running())
+            # ready_future = grpc.channel_ready_future(channel)
+            # ready_future.add_done_callback(callback.accept_value)
+            # with self.assertRaises(grpc.FutureTimeoutError):
+            #     ready_future.result(timeout=test_constants.SHORT_TIMEOUT)
+            # self.assertFalse(ready_future.cancelled())
+            # self.assertFalse(ready_future.done())
+            # self.assertTrue(ready_future.running())
+            # ready_future.cancel()
+            # value_passed_to_callback = callback.block_until_called()
+            # self.assertIs(ready_future, value_passed_to_callback)
+            # self.assertTrue(ready_future.cancelled())
+            # self.assertTrue(ready_future.done())
+            # self.assertFalse(ready_future.running())
 
         # for i in range(2):
             # channel = grpc.insecure_channel('localhost:{}'.format(ports[i]))
@@ -119,7 +119,7 @@ class ChannelReadyFutureTest(unittest.TestCase):
 
     def test_daemon_crash(self):
         count = 0
-        for _ in range(100):
+        for _ in range(1):
             new_thread = threading.Thread(target=self.do_stuff)
             new_thread.daemon = True
             new_thread.start()
