@@ -144,6 +144,8 @@ def get_client_stats(num_rpcs, timeout_sec):
 def wait_until_only_given_backends_receive_load(backends, timeout_sec):
   start_time = time.time()
   error_msg = None
+  print('starting to wait for ', timeout_sec, ' until backends', backends, ' receive load')
+  print('start time:', start_time)
   while time.time() - start_time <= timeout_sec:
     error_msg = None
     stats = get_client_stats(max(len(backends), 1), timeout_sec)
@@ -156,6 +158,7 @@ def wait_until_only_given_backends_receive_load(backends, timeout_sec):
       error_msg = 'Unexpected backend received load: %s' % rpcs_by_peer
     if not error_msg:
       return
+  print('end time:', time.time())
   raise Exception(error_msg)
 
 
@@ -440,11 +443,18 @@ def delete_instance_template(compute, project, instance_template):
   except googleapiclient.errors.HttpError as http_error:
     logger.info('Delete failed: %s', http_error)
 
+def print_instance_statuses(compute, project, zone):
+  result = compute.instances().list(
+        project=project,
+        zone=zone).execute()
+  if 'items' in result:
+    for item in result['items']:
+      print(item['name'], '-', item['status'])
+  else:
+    print('No ITEMS!!!!!')
 
 def start_instance(compute, project, zone, instance_name):
-  print(compute.instances().list(
-      project=project,
-      zone=zone).execute())
+  print_instance_statuses(compute, project, zone)
   result = compute.instances().start(
       project=project, zone=zone, instance=instance_name).execute()
   print(result)
@@ -460,9 +470,7 @@ def stop_instance(compute, project, zone, instance_name):
     time.sleep(1)
     i += 1
     print('loop', i, 'instances:')
-    print(compute.instances().list(
-        project=project,
-        zone=zone).execute())
+    print_instance_statuses(compute, project, zone)
 
 def wait_for_global_operation(compute,
                               project,
