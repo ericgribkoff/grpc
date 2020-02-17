@@ -165,10 +165,10 @@ def test_backends_restart(compute, project, zone, instance_names, num_rpcs, stat
   stats = get_client_stats(5, stats_timeout_sec)
   for instance in instance_names:
     stop_instance(compute, project, zone, instance)
-  wait_until_only_given_backends_receive_load([], stats_timeout_sec)
+  wait_until_only_given_backends_receive_load([], 600)
   for instance in instance_names:
     start_instance(compute, project, zone, instance)
-  wait_until_only_given_backends_receive_load(instance_names, stats_timeout_sec)
+  wait_until_only_given_backends_receive_load(instance_names, 600)
   new_stats = get_client_stats(5, stats_timeout_sec)
   for instance in instance_names:
       if abs(stats.rpcs_by_peer[instance] - new_stats.rpcs_by_peer[instance]) > 1:
