@@ -162,20 +162,32 @@ def wait_until_only_given_backends_receive_load(backends, timeout_sec):
   raise Exception(error_msg)
 
 
-def test_backends_restart(compute, project, zone, instance_names, num_rpcs, stats_timeout_sec):
+def test_backends_restart(compute, project, zone, instance_names, instance_group_name, num_rpcs, stats_timeout_sec):
   start_time = time.time()
   wait_until_only_given_backends_receive_load(instance_names, stats_timeout_sec)
   stats = get_client_stats(5, stats_timeout_sec)
-  for instance in instance_names:
-    stop_instance(compute, project, zone, instance)
+  result = compute.instanceGroupManagers().resize(project=project, zone=zone,
+                                                  instanceGroupManager=instance_group_name, size=0).execute()
+  wait_for_zone_operation(
+      compute, project, zone, result['name'], timeout_sec=360)
+  # for instance in instance_names:
+  #   # Instances in MIG auto-heal
+  #   stop_instance(compute, project, zone, instance)
   wait_until_only_given_backends_receive_load([], 600)
-  for instance in instance_names:
-    start_instance(compute, project, zone, instance)
-  wait_until_only_given_backends_receive_load(instance_names, 600)
+  result = compute.instanceGroupManagers().resize(project=project, zone=zone,
+                                                  instanceGroupManager=instance_group_name,
+                                                  size=len(instance_names)).execute()
+  wait_for_zone_operation(
+      compute, project, zone, result['name'], timeout_sec=600)
+  new_instance_names = get_instance_names(compute, PROJECT_ID, ZONE, INSTANCE_GROUP_NAME)
+  # for instance in instance_names:
+  #   start_instance(compute, project, zone, instance)
+  wait_until_only_given_backends_receive_load(new_instance_names, 600)
   new_stats = get_client_stats(5, stats_timeout_sec)
-  for instance in instance_names:
-      if abs(stats.rpcs_by_peer[instance] - new_stats.rpcs_by_peer[instance]) > 1:
-        raise Exception('outside of threshold for ', instance, stats.rpcs_by_peer[instance], new_stats.rpcs_by_peer[instance])
+  for i in range(len(instance_names)):
+      # fix
+      if abs(stats.rpcs_by_peer[instance_names[i]] - new_stats.rpcs_by_peer[new_instance_names[i]]) > 1:
+        raise Exception('outside of threshold for ', new_instance_names[i], stats.rpcs_by_peer[instance_names[i]], new_stats.rpcs_by_peer[new_instance_names[i]])
 
 
 def test_ping_pong(backends, num_rpcs, stats_timeout_sec):
@@ -528,6 +540,24 @@ def wait_for_healthy_backends(compute, project_id, backend_service,
   raise Exception('Not all backends became healthy within %d seconds: %s' %
                   (timeout_sec, result))
 
+def get_instance_names(compute, project, zone, instance_group_name):
+  instance_names = []
+  result = compute.instanceGroups().listInstances(
+      project=project,
+      zone=zone,
+      instanceGroup=instance_group_name,
+      body={
+          'instanceState': 'ALL'
+      }).execute()
+  for item in result['items']:
+    # listInstances() returns the full URL of the instance, which ends with
+    # the instance name. compute.instances().get() requires using the
+    # instance name (not the full URL) to look up instance details, so we
+    # just extract the name manually.
+    instance_name = item['instance'].split('/')[-1]
+    instance_names.append(instance_name)
+  return instance_names
+
 
 def start_xds_client():
   cmd = CLIENT_CMD.format(
@@ -588,46 +618,32 @@ try:
   wait_for_healthy_backends(compute, PROJECT_ID, BACKEND_SERVICE_NAME,
                             instance_group_url, WAIT_FOR_BACKEND_SEC)
 
-  backends = []
-  result = compute.instanceGroups().listInstances(
-      project=PROJECT_ID,
-      zone=ZONE,
-      instanceGroup=INSTANCE_GROUP_NAME,
-      body={
-          'instanceState': 'ALL'
-      }).execute()
-  for item in result['items']:
-    # listInstances() returns the full URL of the instance, which ends with
-    # the instance name. compute.instances().get() requires using the
-    # instance name (not the full URL) to look up instance details, so we
-    # just extract the name manually.
-    instance_name = item['instance'].split('/')[-1]
-    backends.append(instance_name)
+  instance_names = get_instance_names(compute, PROJECT_ID, ZONE, INSTANCE_GROUP_NAME)
 
   client_process = start_xds_client()
 
   if TEST_CASE == 'all':
-    test_ping_pong(backends, NUM_TEST_RPCS, WAIT_FOR_STATS_SEC)
-    test_round_robin(backends, NUM_TEST_RPCS, WAIT_FOR_STATS_SEC)
+    test_ping_pong(instance_names, NUM_TEST_RPCS, WAIT_FOR_STATS_SEC)
+    test_round_robin(instance_names, NUM_TEST_RPCS, WAIT_FOR_STATS_SEC)
   elif TEST_CASE == 'backends_restart':
-    test_backends_restart(compute, PROJECT_ID, ZONE, backends, NUM_TEST_RPCS, WAIT_FOR_STATS_SEC)
+    test_backends_restart(compute, PROJECT_ID, ZONE, instance_names, NUM_TEST_RPCS, WAIT_FOR_STATS_SEC)
   elif TEST_CASE == 'change_backend_service':
-    test_change_backend_service(backends, NUM_TEST_RPCS, WAIT_FOR_STATS_SEC)
+    test_change_backend_service(instance_names, NUM_TEST_RPCS, WAIT_FOR_STATS_SEC)
   elif TEST_CASE == 'new_instance_group_receives_traffic':
-    test_new_instance_group_receives_traffic(backends, NUM_TEST_RPCS,
+    test_new_instance_group_receives_traffic(instance_names, NUM_TEST_RPCS,
                                              WAIT_FOR_STATS_SEC)
   elif TEST_CASE == 'ping_pong':
-    test_ping_pong(backends, NUM_TEST_RPCS, WAIT_FOR_STATS_SEC)
+    test_ping_pong(instance_names, NUM_TEST_RPCS, WAIT_FOR_STATS_SEC)
   elif TEST_CASE == 'remove_instance_group':
-    test_remove_instance_group(backends, NUM_TEST_RPCS, WAIT_FOR_STATS_SEC)
+    test_remove_instance_group(instance_names, NUM_TEST_RPCS, WAIT_FOR_STATS_SEC)
   elif TEST_CASE == 'round_robin':
-    test_round_robin(backends, NUM_TEST_RPCS, WAIT_FOR_STATS_SEC)
+    test_round_robin(instance_names, NUM_TEST_RPCS, WAIT_FOR_STATS_SEC)
   elif TEST_CASE == 'secondary_locality_gets_requests_on_primary_failure':
     test_secondary_locality_gets_requests_on_primary_failure(
-        backends, NUM_TEST_RPCS, WAIT_FOR_STATS_SEC)
+        instance_names, NUM_TEST_RPCS, WAIT_FOR_STATS_SEC)
   elif TEST_CASE == 'secondary_locality_gets_no_requests_on_partial_primary_failure':
     test_secondary_locality_gets_no_requests_on_partial_primary_failure(
-        backends, NUM_TEST_RPCS, WAIT_FOR_STATS_SEC)
+        instance_names, NUM_TEST_RPCS, WAIT_FOR_STATS_SEC)
   else:
     logger.error('Unknown test case: %s', TEST_CASE)
     sys.exit(1)
