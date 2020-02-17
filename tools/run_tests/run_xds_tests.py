@@ -454,9 +454,14 @@ def stop_instance(compute, project, zone, instance_name):
   result = compute.instances().stop(
       project=project, zone=zone, instance=instance_name).execute()
   wait_for_zone_operation(compute, project, zone, result['name'], timeout_sec=600)
-  print(compute.instances().list(
-      project=project,
-      zone=zone).execute())
+  i = 0
+  while i < 10:
+    time.sleep(1)
+    i++
+    print('loop', i, 'instances:')
+    print(compute.instances().list(
+        project=project,
+        zone=zone).execute())
 
 def wait_for_global_operation(compute,
                               project,
@@ -484,7 +489,7 @@ def wait_for_zone_operation(compute,
   while time.time() - start_time <= timeout_sec:
     result = compute.zoneOperations().get(
         project=project, zone=zone, operation=operation).execute()
-    print(result)
+    # print(result)
     if result['status'] == 'DONE':
       if 'error' in result:
         raise Exception(result['error'])
