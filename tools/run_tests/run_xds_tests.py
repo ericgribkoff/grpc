@@ -457,7 +457,7 @@ def stop_instance(compute, project, zone, instance_name):
   i = 0
   while i < 10:
     time.sleep(1)
-    i++
+    i += 1
     print('loop', i, 'instances:')
     print(compute.instances().list(
         project=project,
