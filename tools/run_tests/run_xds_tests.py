@@ -162,13 +162,13 @@ def wait_until_only_given_backends_receive_load(backends, timeout_sec):
 def test_backends_restart(compute, project, zone, instance_names, num_rpcs, stats_timeout_sec):
   start_time = time.time()
   wait_until_only_given_backends_receive_load(backends, stats_timeout_sec)
-  stats = get_client_stats(100, stats_timeout_sec)
+  stats = get_client_stats(5, stats_timeout_sec)
   for instance in instance_names:
     stop_instance(compute, project, zone, instance)
   wait_until_only_given_backends_receive_load([], stats_timeout_sec)
   for instance in instance_names:
     start_instance(compute, project, zone, instance)
-  new_stats = get_client_stats(100, stats_timeout_sec)
+  new_stats = get_client_stats(5, stats_timeout_sec)
   for instance in instance_names:
       if abs(stats.rpcs_by_peer[instance] - new_stats.rpcs_by_peer[instance]) > 1:
         raise Exception('outside of threshold for ', instance, stats.rpcs_by_peer[instance], new_stats.rpcs_by_peer[backend])
