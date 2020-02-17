@@ -186,8 +186,8 @@ def test_backends_restart(compute, project, zone, instance_names,
       size=len(instance_names)).execute()
   wait_for_zone_operation(
       compute, project, zone, result['name'], timeout_sec=600)
-  new_instance_names = get_instance_names(compute, PROJECT_ID, ZONE,
-                                          INSTANCE_GROUP_NAME)
+  new_instance_names = get_instance_names(compute, project, zone,
+                                          instance_group_name)
   # for instance in instance_names:
   #   start_instance(compute, project, zone, instance)
   wait_until_only_given_backends_receive_load(new_instance_names, 600)
