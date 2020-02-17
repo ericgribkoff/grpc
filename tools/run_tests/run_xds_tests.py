@@ -164,7 +164,8 @@ def wait_until_only_given_backends_receive_load(backends, timeout_sec):
 
 
 def test_backends_restart(compute, project, zone, instance_names,
-                          instance_group_name, num_rpcs, stats_timeout_sec):
+                          instance_group_name, backend_service_name,
+                          instance_group_url, num_rpcs, stats_timeout_sec):
   start_time = time.time()
   wait_until_only_given_backends_receive_load(instance_names, stats_timeout_sec)
   stats = get_client_stats(5, stats_timeout_sec)
@@ -186,6 +187,8 @@ def test_backends_restart(compute, project, zone, instance_names,
       size=len(instance_names)).execute()
   wait_for_zone_operation(
       compute, project, zone, result['name'], timeout_sec=600)
+  wait_for_healthy_backends(compute, project, backend_service_name,
+                            instance_group_url, 600)
   new_instance_names = get_instance_names(compute, project, zone,
                                           instance_group_name)
   # for instance in instance_names:
@@ -643,8 +646,8 @@ try:
     test_round_robin(instance_names, NUM_TEST_RPCS, WAIT_FOR_STATS_SEC)
   elif TEST_CASE == 'backends_restart':
     test_backends_restart(compute, PROJECT_ID, ZONE, instance_names,
-                          INSTANCE_GROUP_NAME, NUM_TEST_RPCS,
-                          WAIT_FOR_STATS_SEC)
+                          INSTANCE_GROUP_NAME, BACKEND_SERVICE_NAME,
+                          instance_group_url, NUM_TEST_RPCS, WAIT_FOR_STATS_SEC)
   elif TEST_CASE == 'change_backend_service':
     test_change_backend_service(instance_names, NUM_TEST_RPCS,
                                 WAIT_FOR_STATS_SEC)
