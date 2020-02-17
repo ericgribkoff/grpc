@@ -443,6 +443,7 @@ def delete_instance_template(compute, project, instance_template):
 def start_instance(compute, project, zone, instance_name):
   result = compute.instances().start(
       project=project, zone=zone, instance=instance_name).execute()
+  print(result)
   wait_for_zone_operation(compute, project, zone, result['name'], timeout_sec=600)
 
 
