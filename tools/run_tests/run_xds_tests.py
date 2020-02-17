@@ -144,7 +144,8 @@ def get_client_stats(num_rpcs, timeout_sec):
 def wait_until_only_given_backends_receive_load(backends, timeout_sec):
   start_time = time.time()
   error_msg = None
-  print('starting to wait for ', timeout_sec, ' until backends', backends, ' receive load')
+  print('starting to wait for ', timeout_sec, ' until backends', backends,
+        ' receive load')
   print('start time:', start_time)
   while time.time() - start_time <= timeout_sec:
     error_msg = None
@@ -162,32 +163,42 @@ def wait_until_only_given_backends_receive_load(backends, timeout_sec):
   raise Exception(error_msg)
 
 
-def test_backends_restart(compute, project, zone, instance_names, instance_group_name, num_rpcs, stats_timeout_sec):
+def test_backends_restart(compute, project, zone, instance_names,
+                          instance_group_name, num_rpcs, stats_timeout_sec):
   start_time = time.time()
   wait_until_only_given_backends_receive_load(instance_names, stats_timeout_sec)
   stats = get_client_stats(5, stats_timeout_sec)
-  result = compute.instanceGroupManagers().resize(project=project, zone=zone,
-                                                  instanceGroupManager=instance_group_name, size=0).execute()
+  result = compute.instanceGroupManagers().resize(
+      project=project,
+      zone=zone,
+      instanceGroupManager=instance_group_name,
+      size=0).execute()
   wait_for_zone_operation(
       compute, project, zone, result['name'], timeout_sec=360)
   # for instance in instance_names:
   #   # Instances in MIG auto-heal
   #   stop_instance(compute, project, zone, instance)
   wait_until_only_given_backends_receive_load([], 600)
-  result = compute.instanceGroupManagers().resize(project=project, zone=zone,
-                                                  instanceGroupManager=instance_group_name,
-                                                  size=len(instance_names)).execute()
+  result = compute.instanceGroupManagers().resize(
+      project=project,
+      zone=zone,
+      instanceGroupManager=instance_group_name,
+      size=len(instance_names)).execute()
   wait_for_zone_operation(
       compute, project, zone, result['name'], timeout_sec=600)
-  new_instance_names = get_instance_names(compute, PROJECT_ID, ZONE, INSTANCE_GROUP_NAME)
+  new_instance_names = get_instance_names(compute, PROJECT_ID, ZONE,
+                                          INSTANCE_GROUP_NAME)
   # for instance in instance_names:
   #   start_instance(compute, project, zone, instance)
   wait_until_only_given_backends_receive_load(new_instance_names, 600)
   new_stats = get_client_stats(5, stats_timeout_sec)
   for i in range(len(instance_names)):
-      # fix
-      if abs(stats.rpcs_by_peer[instance_names[i]] - new_stats.rpcs_by_peer[new_instance_names[i]]) > 1:
-        raise Exception('outside of threshold for ', new_instance_names[i], stats.rpcs_by_peer[instance_names[i]], new_stats.rpcs_by_peer[new_instance_names[i]])
+    # fix
+    if abs(stats.rpcs_by_peer[instance_names[i]] -
+           new_stats.rpcs_by_peer[new_instance_names[i]]) > 1:
+      raise Exception('outside of threshold for ', new_instance_names[i],
+                      stats.rpcs_by_peer[instance_names[i]],
+                      new_stats.rpcs_by_peer[new_instance_names[i]])
 
 
 def test_ping_pong(backends, num_rpcs, stats_timeout_sec):
@@ -455,34 +466,37 @@ def delete_instance_template(compute, project, instance_template):
   except googleapiclient.errors.HttpError as http_error:
     logger.info('Delete failed: %s', http_error)
 
+
 def print_instance_statuses(compute, project, zone):
-  result = compute.instances().list(
-        project=project,
-        zone=zone).execute()
+  result = compute.instances().list(project=project, zone=zone).execute()
   if 'items' in result:
     for item in result['items']:
       print(item['name'], '-', item['status'])
   else:
     print('No ITEMS!!!!!')
 
+
 def start_instance(compute, project, zone, instance_name):
   print_instance_statuses(compute, project, zone)
   result = compute.instances().start(
       project=project, zone=zone, instance=instance_name).execute()
   print(result)
-  wait_for_zone_operation(compute, project, zone, result['name'], timeout_sec=600)
+  wait_for_zone_operation(
+      compute, project, zone, result['name'], timeout_sec=600)
 
 
 def stop_instance(compute, project, zone, instance_name):
   result = compute.instances().stop(
       project=project, zone=zone, instance=instance_name).execute()
-  wait_for_zone_operation(compute, project, zone, result['name'], timeout_sec=600)
+  wait_for_zone_operation(
+      compute, project, zone, result['name'], timeout_sec=600)
   i = 0
   while i < 10:
     time.sleep(1)
     i += 1
     print('loop', i, 'instances:')
     print_instance_statuses(compute, project, zone)
+
 
 def wait_for_global_operation(compute,
                               project,
@@ -539,6 +553,7 @@ def wait_for_healthy_backends(compute, project_id, backend_service,
     time.sleep(1)
   raise Exception('Not all backends became healthy within %d seconds: %s' %
                   (timeout_sec, result))
+
 
 def get_instance_names(compute, project, zone, instance_group_name):
   instance_names = []
@@ -618,7 +633,8 @@ try:
   wait_for_healthy_backends(compute, PROJECT_ID, BACKEND_SERVICE_NAME,
                             instance_group_url, WAIT_FOR_BACKEND_SEC)
 
-  instance_names = get_instance_names(compute, PROJECT_ID, ZONE, INSTANCE_GROUP_NAME)
+  instance_names = get_instance_names(compute, PROJECT_ID, ZONE,
+                                      INSTANCE_GROUP_NAME)
 
   client_process = start_xds_client()
 
@@ -626,16 +642,20 @@ try:
     test_ping_pong(instance_names, NUM_TEST_RPCS, WAIT_FOR_STATS_SEC)
     test_round_robin(instance_names, NUM_TEST_RPCS, WAIT_FOR_STATS_SEC)
   elif TEST_CASE == 'backends_restart':
-    test_backends_restart(compute, PROJECT_ID, ZONE, instance_names, NUM_TEST_RPCS, WAIT_FOR_STATS_SEC)
+    test_backends_restart(compute, PROJECT_ID, ZONE, instance_names,
+                          INSTANCE_GROUP_NAME, NUM_TEST_RPCS,
+                          WAIT_FOR_STATS_SEC)
   elif TEST_CASE == 'change_backend_service':
-    test_change_backend_service(instance_names, NUM_TEST_RPCS, WAIT_FOR_STATS_SEC)
+    test_change_backend_service(instance_names, NUM_TEST_RPCS,
+                                WAIT_FOR_STATS_SEC)
   elif TEST_CASE == 'new_instance_group_receives_traffic':
     test_new_instance_group_receives_traffic(instance_names, NUM_TEST_RPCS,
                                              WAIT_FOR_STATS_SEC)
   elif TEST_CASE == 'ping_pong':
     test_ping_pong(instance_names, NUM_TEST_RPCS, WAIT_FOR_STATS_SEC)
   elif TEST_CASE == 'remove_instance_group':
-    test_remove_instance_group(instance_names, NUM_TEST_RPCS, WAIT_FOR_STATS_SEC)
+    test_remove_instance_group(instance_names, NUM_TEST_RPCS,
+                               WAIT_FOR_STATS_SEC)
   elif TEST_CASE == 'round_robin':
     test_round_robin(instance_names, NUM_TEST_RPCS, WAIT_FOR_STATS_SEC)
   elif TEST_CASE == 'secondary_locality_gets_requests_on_primary_failure':
