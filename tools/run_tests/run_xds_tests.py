@@ -441,6 +441,9 @@ def delete_instance_template(compute, project, instance_template):
 
 
 def start_instance(compute, project, zone, instance_name):
+  print(compute.instances().list(
+      project=project,
+      zone=zone).execute())
   result = compute.instances().start(
       project=project, zone=zone, instance=instance_name).execute()
   print(result)
@@ -451,6 +454,9 @@ def stop_instance(compute, project, zone, instance_name):
   result = compute.instances().stop(
       project=project, zone=zone, instance=instance_name).execute()
   wait_for_zone_operation(compute, project, zone, result['name'], timeout_sec=600)
+  print(compute.instances().list(
+      project=project,
+      zone=zone).execute())
 
 def wait_for_global_operation(compute,
                               project,
