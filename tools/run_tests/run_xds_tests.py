@@ -478,6 +478,7 @@ def wait_for_zone_operation(compute,
   while time.time() - start_time <= timeout_sec:
     result = compute.zoneOperations().get(
         project=project, zone=zone, operation=operation).execute()
+    print(result)
     if result['status'] == 'DONE':
       if 'error' in result:
         raise Exception(result['error'])
