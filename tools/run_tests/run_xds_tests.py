@@ -72,6 +72,10 @@ argp.add_argument(
     help=
     'If provided, uses this file instead of retrieving via the GCP discovery API')
 argp.add_argument(
+    '--source_image',
+    default='projects/debian-cloud/global/images/family/debian-9',
+    help='Source image for VMs created during the test')
+argp.add_argument(
     '--tolerate_gcp_errors',
     default=False,
     action='store_true',
@@ -217,8 +221,7 @@ def create_instance_template(compute, name, grpc_port, project):
             'disks': [{
                 'boot': True,
                 'initializeParams': {
-                    'sourceImage':
-                        'projects/debian-cloud/global/images/family/debian-9'
+                    'sourceImage': args.source_image
                 }
             }],
             'metadata': {
@@ -236,7 +239,7 @@ git clone https://github.com/grpc/grpc-java.git
 pushd grpc-java
 pushd interop-testing
 ../gradlew installDist -x test -PskipCodegen=true -PskipAndroid=true
- 
+
 nohup build/install/grpc-interop-testing/bin/xds-test-server --port=%d 1>/dev/null &"""
                         % grpc_port
                 }]
