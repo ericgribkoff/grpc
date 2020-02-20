@@ -26,6 +26,8 @@ import sys
 import tempfile
 import time
 
+from oauth2client.client import GoogleCredentials
+
 from src.proto.grpc.testing import messages_pb2
 from src.proto.grpc.testing import test_pb2_grpc
 
@@ -64,6 +66,12 @@ argp.add_argument(
     'Leave GCP VMs and configuration running after test. Default behavior is '
     'to delete when tests complete.')
 argp.add_argument(
+    '--compute_discovery_document',
+    default=None,
+    type=str,
+    help=
+    'If provided, uses this file instead of retrieving via the GCP discovery API')
+argp.add_argument(
     '--tolerate_gcp_errors',
     default=False,
     action='store_true',
@@ -79,6 +87,7 @@ args = argp.parse_args()
 
 if args.verbose:
     logger.setLevel(logging.DEBUG)
+    logging.basicConfig(level=logging.DEBUG)
 
 PROJECT_ID = args.project_id
 ZONE = args.zone
@@ -506,7 +515,11 @@ def start_xds_client():
     return client_process
 
 
-compute = googleapiclient.discovery.build('compute', 'v1')
+if args.compute_discovery_document:
+  with open(args.compute_discovery_document, 'r') as discovery_doc:
+    compute = googleapiclient.discovery.build_from_document(discovery_doc.read())
+else:
+  compute = googleapiclient.discovery.build('compute', 'v1')
 client_process = None
 
 try:
