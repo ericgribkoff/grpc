@@ -78,6 +78,7 @@ argp.add_argument(
 argp.add_argument(
     '--grpc_port',
     default=55551,
+    type=int,
     help='Listening port for created gRPC backends')
 argp.add_argument(
     '--xds_server',
