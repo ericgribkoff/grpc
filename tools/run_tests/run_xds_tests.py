@@ -76,6 +76,14 @@ argp.add_argument(
     default='global/networks/default',
     help='GCP network to use')
 argp.add_argument(
+    '--grpc_port',
+    default=55551,
+    help='Listening port for created gRPC backends')
+argp.add_argument(
+    '--xds_server',
+    default='trafficdirector.googleapis.com:443',
+    help='xDS server')
+argp.add_argument(
     '--source_image',
     default='projects/debian-cloud/global/images/family/debian-9',
     help='Source image for VMs created during the test')
@@ -114,7 +122,7 @@ TARGET_PROXY_NAME = 'test-target-proxy' + args.gcp_suffix
 FORWARDING_RULE_NAME = 'test-forwarding-rule' + args.gcp_suffix
 KEEP_GCP_RESOURCES = args.keep_gcp_resources
 TOLERATE_GCP_ERRORS = args.tolerate_gcp_errors
-SERVICE_PORT = 55551
+SERVICE_PORT = args.grpc_port
 STATS_PORT = 55552
 INSTANCE_GROUP_SIZE = 2
 WAIT_FOR_OPERATION_SEC = 60
@@ -126,7 +134,7 @@ BOOTSTRAP_TEMPLATE = """
     "id": "{node_id}"
   }},
   "xds_servers": [{{
-    "server_uri": "trafficdirector.googleapis.com:443",
+    "server_uri": "%s",
     "channel_creds": [
       {{
         "type": "google_default",
@@ -134,7 +142,7 @@ BOOTSTRAP_TEMPLATE = """
       }}
     ]
   }}]
-}}"""
+}}""" % args.xds_server
 
 
 def get_client_stats(num_rpcs, timeout_sec):
