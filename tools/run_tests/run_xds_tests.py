@@ -370,6 +370,7 @@ def create_global_forwarding_rule(compute, name, grpc_port,
         'loadBalancingScheme': 'INTERNAL_SELF_MANAGED',
         'portRange': str(grpc_port),
         'IPAddress': '0.0.0.0',
+        'network': args.network,
         'target': target_http_proxy_url,
     }
     result = compute.globalForwardingRules().insert(project=project,
