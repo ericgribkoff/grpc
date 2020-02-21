@@ -72,6 +72,10 @@ argp.add_argument(
     help=
     'If provided, uses this file instead of retrieving via the GCP discovery API')
 argp.add_argument(
+    '--network',
+    default='global/networks/default',
+    help='GCP network to use')
+argp.add_argument(
     '--source_image',
     default='projects/debian-cloud/global/images/family/debian-9',
     help='Source image for VMs created during the test')
@@ -216,7 +220,7 @@ def create_instance_template(compute, name, grpc_port, project):
                 'accessConfigs': [{
                     'type': 'ONE_TO_ONE_NAT'
                 }],
-                'network': 'global/networks/default'
+                'network': args.network
             }],
             'disks': [{
                 'boot': True,
