@@ -295,18 +295,27 @@ def test_round_robin(backends, num_rpcs, stats_timeout_sec):
 
 
 def test_secondary_locality_gets_requests_on_primary_failure(compute, project,
-        primary_zone, backend_service_name, service_port, template_url, stats_timeout_sec):
+        primary_zone, backend_service_name, primary_instance_group_url,
+        primary_instance_names, service_port, template_url, stats_timeout_sec):
     # two MIGs, one in same zone as client, one in another zone
     # wait for all backends healthy
     # resize MIG in same zone to 0
-    secondary_zone = 'us-central1-b'
+    secondary_zone = 'us-west1-b' # In same region is not secondary, gets traffic 'us-central1-b'
     secondary_instance_group_name = 'test-secondary-ig' + args.gcp_suffix
-    secondary_instance_group_url = create_instance_group(compute, project, secondary_zone,
+    try:
+        secondary_instance_group_url = create_instance_group(compute, project, secondary_zone,
                                                secondary_instance_group_name,
                                                2,
                                                service_port, template_url)
+    except googleapiclient.errors.HttpError as http_error:
+        #TODO: handle this elsewhere
+        result = compute.instanceGroups().get(
+            project=project, zone=secondary_zone,
+            instanceGroup=secondary_instance_group_name).execute()
+        secondary_instance_group_url = result['selfLink']
+    # this uses patch, which replaces the old instance group
     add_instances_to_backend(compute, project, backend_service_name,
-                             secondary_instance_group_url)
+                             [primary_instance_group_url, secondary_instance_group_url])
     wait_for_healthy_backends(compute, project, backend_service_name,
                               secondary_instance_group_url, WAIT_FOR_BACKEND_SEC)
     secondary_instance_names = get_instance_names(compute, project, secondary_zone,
@@ -314,6 +323,7 @@ def test_secondary_locality_gets_requests_on_primary_failure(compute, project,
     wait_until_only_given_backends_receive_load(primary_instance_names, stats_timeout_sec)
     get_client_stats(100, 20)
 
+    # TODO: clean up instance group
 
 
 
@@ -386,7 +396,7 @@ def create_instance_group(compute, project, zone, name, size, grpc_port,
                                                     body=config).execute()
     wait_for_zone_operation(compute, project, zone, result['name'])
     result = compute.instanceGroupManagers().get(
-        project=PROJECT_ID, zone=ZONE, instanceGroupManager=name).execute()
+        project=project, zone=zone, instanceGroupManager=name).execute()
     return result['instanceGroup']
 
 
@@ -594,11 +604,11 @@ def delete_instance_template(compute, project, instance_template):
 #         print_instance_statuses(compute, project, zone)
 
 
-def add_instances_to_backend(compute, project, backend_service, instance_group):
+def add_instances_to_backend(compute, project, backend_service, instance_groups):
     config = {
         'backends': [{
             'group': instance_group,
-        }],
+        } for instance_group in instance_groups],
     }
     result = compute.backendServices().patch(project=project,
                                              backendService=backend_service,
@@ -712,8 +722,9 @@ else:
 client_process = None
 
 try:
-    service_port = None
     instance_group_url = None
+    service_port = None
+    template_url = None
     try:
         health_check_url = create_health_check(compute, PROJECT_ID,
                                                HEALTH_CHECK_NAME)
@@ -753,16 +764,12 @@ try:
                                                    INSTANCE_GROUP_SIZE,
                                                    service_port, template_url)
         add_instances_to_backend(compute, PROJECT_ID, BACKEND_SERVICE_NAME,
-                                 instance_group_url)
+                                 [instance_group_url])
     except googleapiclient.errors.HttpError as http_error:
         if TOLERATE_GCP_ERRORS:
             logger.warning(
                 'Failed to set up backends: %s. Continuing since '
                 '--tolerate_gcp_errors=true', http_error)
-            if not service_port:
-                service_port = args.service_port_range[0]
-                logger.warning('Using arbitrary service port in range: %d' %
-                               service_port)
             if not instance_group_url:
                 result = compute.instanceGroups().get(
                     project=PROJECT_ID, zone=ZONE,
@@ -770,9 +777,12 @@ try:
                 instance_group_url = result['selfLink']
             if not template_url:
                 result = compute.instanceTemplates().get(
-                    project=PROJECT_ID, zone=ZONE,
-                    instanceTemplate=TEMPLATE_NAME).execute()
+                    project=PROJECT_ID, instanceTemplate=TEMPLATE_NAME).execute()
                 template_url = result['selfLink']
+            if not service_port:
+                service_port = args.service_port_range[0]
+                logger.warning('Using arbitrary service port in range: %d' %
+                               service_port)
         else:
             raise http_error
 
@@ -808,7 +818,8 @@ try:
         test_round_robin(instance_names, NUM_TEST_RPCS, WAIT_FOR_STATS_SEC)
     elif TEST_CASE == 'secondary_locality_gets_requests_on_primary_failure':
         test_secondary_locality_gets_requests_on_primary_failure(compute, PROJECT_ID,
-            ZONE, BACKEND_SERVICE_NAME, service_port, template_url, WAIT_FOR_STATS_SEC)
+            ZONE, BACKEND_SERVICE_NAME, instance_group_url, instance_names, 
+            service_port, template_url, WAIT_FOR_STATS_SEC)
     elif TEST_CASE == 'secondary_locality_gets_no_requests_on_partial_primary_failure':
         test_secondary_locality_gets_no_requests_on_partial_primary_failure(
             instance_names, NUM_TEST_RPCS, WAIT_FOR_STATS_SEC)
