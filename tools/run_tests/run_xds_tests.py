@@ -177,8 +177,11 @@ def get_client_stats(num_rpcs, timeout_sec):
         request = messages_pb2.LoadBalancerStatsRequest()
         request.num_rpcs = num_rpcs
         request.timeout_sec = timeout_sec
+        rpc_timeout = timeout_sec * 2  # Allow time for connection establishment
         try:
-            response = stub.GetClientStats(request, wait_for_ready=True)
+            response = stub.GetClientStats(request,
+                                           wait_for_ready=True,
+                                           timeout=rpc_timeout)
             logger.debug('Invoked GetClientStats RPC: %s', response)
             return response
         except grpc.RpcError as rpc_error:
@@ -745,21 +748,8 @@ try:
     wait_for_healthy_backends(compute, PROJECT_ID, BACKEND_SERVICE_NAME,
                               instance_group_url, WAIT_FOR_BACKEND_SEC)
 
-    backends = []
-    result = compute.instanceGroups().listInstances(
-        project=PROJECT_ID,
-        zone=ZONE,
-        instanceGroup=INSTANCE_GROUP_NAME,
-        body={
-            'instanceState': 'ALL'
-        }).execute()
-    for item in result['items']:
-        # listInstances() returns the full URL of the instance, which ends with
-        # the instance name. compute.instances().get() requires using the
-        # instance name (not the full URL) to look up instance details, so we
-        # just extract the name manually.
-        instance_name = item['instance'].split('/')[-1]
-        backends.append(instance_name)
+    instance_names = get_instance_names(compute, PROJECT_ID, ZONE,
+                                        INSTANCE_GROUP_NAME)
 
     client_process = start_xds_client(service_port)
 
