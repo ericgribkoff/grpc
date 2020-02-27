@@ -169,7 +169,7 @@ BOOTSTRAP_TEMPLATE = """
     ]
   }}]
 }}""" % args.xds_server
-
+#ZONES = ['us-east1-c', 'us-central1-a', 'us-west1-b']
 
 def get_client_stats(num_rpcs, timeout_sec):
     with grpc.insecure_channel('localhost:%d' % STATS_PORT) as channel:
@@ -210,13 +210,14 @@ def wait_until_only_given_backends_receive_load(backends, timeout_sec):
     raise Exception(error_msg)
 
 
+# Takes approx 6 minutes
 def test_backends_restart(compute, project, zone, instance_names,
                           instance_group_name, backend_service_name,
                           instance_group_url, num_rpcs, stats_timeout_sec):
     start_time = time.time()
     wait_until_only_given_backends_receive_load(instance_names,
                                                 stats_timeout_sec)
-    stats = get_client_stats(5, stats_timeout_sec)
+    stats = get_client_stats(100, stats_timeout_sec)
     result = compute.instanceGroupManagers().resize(
         project=project,
         zone=zone,
@@ -248,7 +249,7 @@ def test_backends_restart(compute, project, zone, instance_names,
     # for instance in instance_names:
     #   start_instance(compute, project, zone, instance)
     wait_until_only_given_backends_receive_load(new_instance_names, 600)
-    new_stats = get_client_stats(5, stats_timeout_sec)
+    new_stats = get_client_stats(100, stats_timeout_sec)
     for i in range(len(instance_names)):
         # fix
         if abs(stats.rpcs_by_peer[instance_names[i]] -
@@ -291,6 +292,29 @@ def test_round_robin(backends, num_rpcs, stats_timeout_sec):
             raise Exception(
                 'RPC peer distribution differs from expected by more than %d for backend %s (%s)',
                 threshold, backend, stats)
+
+
+def test_secondary_locality_gets_requests_on_primary_failure(compute, project,
+        primary_zone, backend_service_name, service_port, template_url, stats_timeout_sec):
+    # two MIGs, one in same zone as client, one in another zone
+    # wait for all backends healthy
+    # resize MIG in same zone to 0
+    secondary_zone = 'us-central1-b'
+    secondary_instance_group_name = 'test-secondary-ig' + args.gcp_suffix
+    secondary_instance_group_url = create_instance_group(compute, project, secondary_zone,
+                                               secondary_instance_group_name,
+                                               2,
+                                               service_port, template_url)
+    add_instances_to_backend(compute, project, backend_service_name,
+                             secondary_instance_group_url)
+    wait_for_healthy_backends(compute, project, backend_service_name,
+                              secondary_instance_group_url, WAIT_FOR_BACKEND_SEC)
+    secondary_instance_names = get_instance_names(compute, project, secondary_zone,
+                                        secondary_instance_group_name)
+    wait_until_only_given_backends_receive_load(primary_instance_names, stats_timeout_sec)
+    get_client_stats(100, 20)
+
+
 
 
 def create_instance_template(compute, project, name, grpc_port):
@@ -531,43 +555,43 @@ def delete_instance_template(compute, project, instance_template):
         logger.info('Delete failed: %s', http_error)
 
 
-def print_instance_statuses(compute, project, zone):
-    result = compute.instances().list(project=project, zone=zone).execute()
-    if 'items' in result:
-        for item in result['items']:
-            print(item['name'], '-', item['status'])
-    else:
-        print('No ITEMS!!!!!')
+# def print_instance_statuses(compute, project, zone):
+#     result = compute.instances().list(project=project, zone=zone).execute()
+#     if 'items' in result:
+#         for item in result['items']:
+#             print(item['name'], '-', item['status'])
+#     else:
+#         print('No ITEMS!!!!!')
 
 
-def start_instance(compute, project, zone, instance_name):
-    print_instance_statuses(compute, project, zone)
-    result = compute.instances().start(project=project,
-                                       zone=zone,
-                                       instance=instance_name).execute()
-    print(result)
-    wait_for_zone_operation(compute,
-                            project,
-                            zone,
-                            result['name'],
-                            timeout_sec=600)
+# def start_instance(compute, project, zone, instance_name):
+#     print_instance_statuses(compute, project, zone)
+#     result = compute.instances().start(project=project,
+#                                        zone=zone,
+#                                        instance=instance_name).execute()
+#     print(result)
+#     wait_for_zone_operation(compute,
+#                             project,
+#                             zone,
+#                             result['name'],
+#                             timeout_sec=600)
 
 
-def stop_instance(compute, project, zone, instance_name):
-    result = compute.instances().stop(project=project,
-                                      zone=zone,
-                                      instance=instance_name).execute()
-    wait_for_zone_operation(compute,
-                            project,
-                            zone,
-                            result['name'],
-                            timeout_sec=600)
-    i = 0
-    while i < 10:
-        time.sleep(1)
-        i += 1
-        print('loop', i, 'instances:')
-        print_instance_statuses(compute, project, zone)
+# def stop_instance(compute, project, zone, instance_name):
+#     result = compute.instances().stop(project=project,
+#                                       zone=zone,
+#                                       instance=instance_name).execute()
+#     wait_for_zone_operation(compute,
+#                             project,
+#                             zone,
+#                             result['name'],
+#                             timeout_sec=600)
+#     i = 0
+#     while i < 10:
+#         time.sleep(1)
+#         i += 1
+#         print('loop', i, 'instances:')
+#         print_instance_statuses(compute, project, zone)
 
 
 def add_instances_to_backend(compute, project, backend_service, instance_group):
@@ -685,10 +709,10 @@ if args.compute_discovery_document:
 else:
     compute = googleapiclient.discovery.build('compute', 'v1')
 
-service_port = None
 client_process = None
 
 try:
+    service_port = None
     instance_group_url = None
     try:
         health_check_url = create_health_check(compute, PROJECT_ID,
@@ -735,16 +759,23 @@ try:
             logger.warning(
                 'Failed to set up backends: %s. Continuing since '
                 '--tolerate_gcp_errors=true', http_error)
+            if not service_port:
+                service_port = args.service_port_range[0]
+                logger.warning('Using arbitrary service port in range: %d' %
+                               service_port)
+            if not instance_group_url:
+                result = compute.instanceGroups().get(
+                    project=PROJECT_ID, zone=ZONE,
+                    instanceGroup=INSTANCE_GROUP_NAME).execute()
+                instance_group_url = result['selfLink']
+            if not template_url:
+                result = compute.instanceTemplates().get(
+                    project=PROJECT_ID, zone=ZONE,
+                    instanceTemplate=TEMPLATE_NAME).execute()
+                template_url = result['selfLink']
         else:
             raise http_error
 
-    if instance_group_url is None:
-        # Look up the instance group URL, which may be unset if we are running
-        # with --tolerate_gcp_errors=true.
-        result = compute.instanceGroups().get(
-            project=PROJECT_ID, zone=ZONE,
-            instanceGroup=INSTANCE_GROUP_NAME).execute()
-        instance_group_url = result['selfLink']
     wait_for_healthy_backends(compute, PROJECT_ID, BACKEND_SERVICE_NAME,
                               instance_group_url, WAIT_FOR_BACKEND_SEC)
 
@@ -776,8 +807,8 @@ try:
     elif TEST_CASE == 'round_robin':
         test_round_robin(instance_names, NUM_TEST_RPCS, WAIT_FOR_STATS_SEC)
     elif TEST_CASE == 'secondary_locality_gets_requests_on_primary_failure':
-        test_secondary_locality_gets_requests_on_primary_failure(
-            instance_names, NUM_TEST_RPCS, WAIT_FOR_STATS_SEC)
+        test_secondary_locality_gets_requests_on_primary_failure(compute, PROJECT_ID,
+            ZONE, BACKEND_SERVICE_NAME, service_port, template_url, WAIT_FOR_STATS_SEC)
     elif TEST_CASE == 'secondary_locality_gets_no_requests_on_partial_primary_failure':
         test_secondary_locality_gets_no_requests_on_partial_primary_failure(
             instance_names, NUM_TEST_RPCS, WAIT_FOR_STATS_SEC)
