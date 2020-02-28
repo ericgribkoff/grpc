@@ -260,10 +260,12 @@ def test_backends_restart(compute, project, zone, instance_names,
                             stats.rpcs_by_peer[instance_names[i]],
                             new_stats.rpcs_by_peer[new_instance_names[i]])
 
+# TODO: put all created resource urls/names/zone etc into an object that is
+# passed around + including compute and project
 def test_change_backend_service(compute, project,
-        zone, backend_service_name, primary_instance_group_name,
+        zone, backend_service_name, backend_service_url, url_map_name, primary_instance_group_name,
         primary_instance_group_url,
-        primary_instance_names, service_port, template_url, stats_timeout_sec):
+        primary_instance_names, service_port, template_url, health_check_url, stats_timeout_sec):
     secondary_instance_group_name = 'test-secondary-same-locality-ig' + args.gcp_suffix
     try:
         secondary_instance_group_url = create_instance_group(compute, project, zone,
@@ -276,26 +278,57 @@ def test_change_backend_service(compute, project,
             project=project, zone=zone,
             instanceGroup=secondary_instance_group_name).execute()
         secondary_instance_group_url = result['selfLink']
-    # this uses patch, which replaces the old instance group
-    add_instances_to_backend(compute, project, backend_service_name,
-                             [primary_instance_group_url, secondary_instance_group_url])
-    wait_for_healthy_backends(compute, project, backend_service_name,
+    new_backend_service_name = 'test-secondary-backend-service' + args.gcp_suffix
+    try:
+        new_backend_service_url = create_backend_service(compute, project,
+                                                         new_backend_service_name,
+                                                         health_check_url)
+    except googleapiclient.errors.HttpError as http_error:
+        result = compute.backendServices().get(
+            project=project,
+            backendService=new_backend_service_name).execute()
+        new_backend_service_url = result['selfLink']
+    add_instances_to_backend(compute, project, new_backend_service_name,
+                             [secondary_instance_group_url])
+    wait_for_healthy_backends(compute, project, new_backend_service_name,
                               secondary_instance_group_url, WAIT_FOR_BACKEND_SEC)
     secondary_instance_names = get_instance_names(compute, project, zone,
                                         secondary_instance_group_name)
-    wait_until_only_given_backends_receive_load(primary_instance_names + secondary_instance_names, stats_timeout_sec, min_rpcs=100)
-    stats = get_client_stats(100, 20)
-    add_instances_to_backend(compute, project, backend_service_name,
-                             [secondary_instance_group_url])    
+
+    wait_until_only_given_backends_receive_load(primary_instance_names, stats_timeout_sec, min_rpcs=100)
+
+    path_matcher_name = 'path-matcher'
+    config = {
+        'defaultService': new_backend_service_url,
+        'pathMatchers': [{
+            'name': path_matcher_name,
+            'defaultService': new_backend_service_url,
+        }]
+    }
+    result = compute.urlMaps().patch(project=project, urlMap=url_map_name, body=config).execute()
+    wait_for_global_operation(compute, project, result['name'])
+
     stats = get_client_stats(500, 100)
     if stats.num_failures > 0:
         raise Exception('Unexpected failure: %s', stats)
     wait_until_only_given_backends_receive_load(secondary_instance_names, stats_timeout_sec, min_rpcs=100, no_failures=True)
+ 
     if not args.keep_gcp_resources:
         delete_instance_group(compute, project, zone, secondary_instance_group_name)
     else:
         add_instances_to_backend(compute, project, backend_service_name,
                              [primary_instance_group_url, secondary_instance_group_url])
+        path_matcher_name = 'path-matcher'
+        config = {
+            'defaultService': backend_service_url,
+            'pathMatchers': [{
+                'name': path_matcher_name,
+                'defaultService': backend_service_url,
+            }]
+        }
+        result = compute.urlMaps().patch(project=project, urlMap=url_map_name, body=config).execute()
+        wait_for_global_operation(compute, project, result['name'])
+
 
 # TODO: rate balancing mode
 def test_new_instance_group_receives_traffic(compute, project,
@@ -381,7 +414,7 @@ def test_remove_instance_group(compute, project,
         delete_instance_group(compute, project, zone, secondary_instance_group_name)
     else:
         add_instances_to_backend(compute, project, backend_service_name,
-                             [primary_instance_group_url, secondary_instance_group_url])
+                             [primary_instance_group_url])
 
 def test_round_robin(backends, num_rpcs, stats_timeout_sec):
     threshold = 1
@@ -946,6 +979,8 @@ else:
 client_process = None
 
 try:
+    backend_service_url = None
+    health_check_url = None
     instance_group_url = None
     service_port = None
     template_url = None
@@ -1003,6 +1038,16 @@ try:
                 result = compute.instanceTemplates().get(
                     project=PROJECT_ID, instanceTemplate=TEMPLATE_NAME).execute()
                 template_url = result['selfLink']
+            if not backend_service_url:
+                result = compute.backendServices().get(
+                    project=PROJECT_ID,
+                    backendService=BACKEND_SERVICE_NAME).execute()
+                backend_service_url = result['selfLink']
+            if not health_check_url:
+                result = compute.healthChecks().get(
+                    project=PROJECT_ID,
+                    healthCheck=HEALTH_CHECK_NAME).execute()
+                health_check_url = result['selfLink']
             if not service_port:
                 service_port = args.service_port_range[0]
                 logger.warning('Using arbitrary service port in range: %d' %
@@ -1028,8 +1073,11 @@ try:
                               instance_group_url, NUM_TEST_RPCS,
                               WAIT_FOR_STATS_SEC)
     elif TEST_CASE == 'change_backend_service':
-        test_change_backend_service(instance_names, NUM_TEST_RPCS,
-                                    WAIT_FOR_STATS_SEC)
+        test_change_backend_service(
+            compute, PROJECT_ID,
+            ZONE, BACKEND_SERVICE_NAME, backend_service_url, URL_MAP_NAME, INSTANCE_GROUP_NAME,
+            instance_group_url, instance_names, 
+            service_port, template_url, health_check_url, WAIT_FOR_STATS_SEC)
     elif TEST_CASE == 'new_instance_group_receives_traffic':
         test_new_instance_group_receives_traffic(
             compute, PROJECT_ID,
@@ -1062,6 +1110,7 @@ try:
         sys.exit(1)
 finally:
     if client_process:
+        # TODO: raise exception if process already terminated
         client_process.terminate()
     if not KEEP_GCP_RESOURCES:
         logger.info('Cleaning up GCP resources. This may take some time.')
