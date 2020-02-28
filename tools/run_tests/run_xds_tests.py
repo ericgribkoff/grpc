@@ -757,6 +757,8 @@ def add_instances_to_backend(compute, project, backend_service, instance_groups)
     config = {
         'backends': [{
             'group': instance_group,
+            'balancingMode': 'RATE',
+            'maxRate': args.qps // 2
         } for instance_group in instance_groups],
     }
     result = compute.backendServices().patch(project=project,
