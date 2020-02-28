@@ -388,12 +388,13 @@ def test_new_instance_group_receives_traffic(
                               secondary_instance_group_name)
 
 
-def test_ping_pong(backends, num_rpcs, stats_timeout_sec):
+def test_ping_pong(gcp):
+    instance_names = get_instance_names(gcp, gcp.instance_groups[0])
     start_time = time.time()
     error_msg = None
-    while time.time() - start_time <= stats_timeout_sec:
+    while time.time() - start_time <= WAIT_FOR_STATS_SEC:
         error_msg = None
-        stats = get_client_stats(num_rpcs, stats_timeout_sec)
+        stats = get_client_stats(NUM_TEST_RPCS, WAIT_FOR_STATS_SEC)
         rpcs_by_peer = stats.rpcs_by_peer
         for backend in backends:
             if backend not in rpcs_by_peer:
@@ -690,7 +691,7 @@ nohup build/install/grpc-interop-testing/bin/xds-test-server --port=%d 1>/dev/nu
     }
 
     result = gcp.compute.instanceTemplates().insert(project=gcp.project,
-                                                body=config).execute()
+                                                    body=config).execute()
     wait_for_global_operation(gcp, result['name'])
     gcp.instance_template = GcpResource(config['name'], result['targetLink'])
 
@@ -707,12 +708,14 @@ def add_instance_group(gcp, zone, name, size):
     }
 
     result = gcp.compute.instanceGroupManagers().insert(project=gcp.project,
-                                                    zone=zone,
-                                                    body=config).execute()
+                                                        zone=zone,
+                                                        body=config).execute()
     wait_for_zone_operation(gcp, zone, result['name'])
     result = gcp.compute.instanceGroupManagers().get(
-        project=gcp.project, zone=zone, instanceGroupManager=config['name']).execute()
-    gcp.instance_groups.append(GcpResource(config['name'], result['instanceGroup']))
+        project=gcp.project, zone=zone,
+        instanceGroupManager=config['name']).execute()
+    gcp.instance_groups.append(
+        InstanceGroup(config['name'], result['instanceGroup'], zone))
 
 
 def create_health_check(gcp, name):
@@ -724,7 +727,7 @@ def create_health_check(gcp, name):
         }
     }
     result = gcp.compute.healthChecks().insert(project=gcp.project,
-                                           body=config).execute()
+                                               body=config).execute()
     wait_for_global_operation(gcp, result['name'])
     gcp.health_check = GcpResource(config['name'], result['targetLink'])
 
@@ -739,9 +742,11 @@ def create_health_check_firewall_rule(gcp, name):
         'sourceRanges': ['35.191.0.0/16', '130.211.0.0/22'],
         'targetTags': ['grpc-allow-healthcheck'],
     }
-    result = gcp.compute.firewalls().insert(project=gcp.project, body=config).execute()
+    result = gcp.compute.firewalls().insert(project=gcp.project,
+                                            body=config).execute()
     wait_for_global_operation(gcp, result['name'])
-    gcp.health_check_firewall_rule = GcpResource(config['name'], result['targetLink'])
+    gcp.health_check_firewall_rule = GcpResource(config['name'],
+                                                 result['targetLink'])
 
 
 def add_backend_service(gcp, name):
@@ -753,13 +758,14 @@ def add_backend_service(gcp, name):
         'protocol': 'HTTP2'
     }
     result = gcp.compute.backendServices().insert(project=gcp.project,
-                                              body=config).execute()
+                                                  body=config).execute()
     wait_for_global_operation(gcp, result['name'])
-    gcp.backend_services.append(GcpResources(config['name'], result['targetLink']))
+    gcp.backend_services.append(
+        GcpResources(config['name'], result['targetLink']))
 
 
 def create_url_map(gcp, name, backend_service, host_name):
-    path_matcher_name = 'path-matcher' # TODO: extract
+    path_matcher_name = 'path-matcher'  # TODO: extract
     config = {
         'name': name + gcp.suffix,
         'defaultService': backend_service.url,
@@ -772,7 +778,8 @@ def create_url_map(gcp, name, backend_service, host_name):
             'pathMatcher': path_matcher_name
         }]
     }
-    result = gcp.compute.urlMaps().insert(project=gcp.project, body=config).execute()
+    result = gcp.compute.urlMaps().insert(project=gcp.project,
+                                          body=config).execute()
     wait_for_global_operation(gcp, result['name'])
     gcp.url_map = GcpResource(config['name'], result['targetLink'])
 
@@ -783,7 +790,7 @@ def create_target_http_proxy(gcp, name):
         'url_map': gcp.url_map.url,
     }
     result = gcp.compute.targetHttpProxies().insert(project=gcp.project,
-                                                body=config).execute()
+                                                    body=config).execute()
     wait_for_global_operation(gcp, result['name'])
     gcp.target_http_proxy = GcpResource(config['name'], result['targetLink'])
 
@@ -798,91 +805,98 @@ def create_global_forwarding_rule(gcp, name, port):
         'target': gcp.target_http_proxy.url,
     }
     result = gcp.compute.globalForwardingRules().insert(project=gcp.project,
-                                                    body=config).execute()
+                                                        body=config).execute()
     wait_for_global_operation(gcp, result['name'])
-    gcp.global_forwarding_rule = GcpResource(config['name'], result['targetLink'])
+    gcp.global_forwarding_rule = GcpResource(config['name'],
+                                             result['targetLink'])
 
 
 def delete_global_forwarding_rule(gcp):
     try:
-        result = compute.globalForwardingRules().delete(
-            project=project, forwardingRule=forwarding_rule).execute()
-        wait_for_global_operation(compute, project, result['name'])
+        result = gcp.compute.globalForwardingRules().delete(
+            project=gcp.project,
+            forwardingRule=gcp.forwarding_rule.name).execute()
+        wait_for_global_operation(gcp, result['name'])
     except googleapiclient.errors.HttpError as http_error:
         logger.info('Delete failed: %s', http_error)
 
 
-def delete_target_http_proxy(compute, project, target_http_proxy):
+def delete_target_http_proxy(gcp):
     try:
-        result = compute.targetHttpProxies().delete(
-            project=project, targetHttpProxy=target_http_proxy).execute()
-        wait_for_global_operation(compute, project, result['name'])
+        result = gcp.compute.targetHttpProxies().delete(
+            project=gcp.project,
+            targetHttpProxy=gcp.target_http_proxy.name).execute()
+        wait_for_global_operation(gcp, result['name'])
     except googleapiclient.errors.HttpError as http_error:
         logger.info('Delete failed: %s', http_error)
 
 
-def delete_url_map(compute, project, url_map):
+def delete_url_map(gcp):
     try:
-        result = compute.urlMaps().delete(project=project,
-                                          urlMap=url_map).execute()
-        wait_for_global_operation(compute, project, result['name'])
+        result = gcp.compute.urlMaps().delete(
+            project=gcp.project, urlMap=gcp.url_map.name).execute()
+        wait_for_global_operation(gcp, result['name'])
     except googleapiclient.errors.HttpError as http_error:
         logger.info('Delete failed: %s', http_error)
 
 
-def delete_backend_service(compute, project, backend_service):
+def delete_backend_services(gcp):
+    for backend_service in gcp.backend_services:
+        try:
+            result = gcp.compute.backendServices().delete(
+                project=gcp.project,
+                backendService=backend_service.name).execute()
+            wait_for_global_operation(gcp, result['name'])
+        except googleapiclient.errors.HttpError as http_error:
+            logger.info('Delete failed: %s', http_error)
+
+
+def delete_firewall(gcp):
     try:
-        result = compute.backendServices().delete(
-            project=project, backendService=backend_service).execute()
-        wait_for_global_operation(compute, project, result['name'])
+        result = gcp.compute.firewalls().delete(project=gcp.project,
+                                                firewall=gcp,
+                                                firewall_rule.name).execute()
+        wait_for_global_operation(gcp, result['name'])
     except googleapiclient.errors.HttpError as http_error:
         logger.info('Delete failed: %s', http_error)
 
 
-def delete_firewall(compute, project, firewall_rule):
+def delete_health_check(gcp):
     try:
-        result = compute.firewalls().delete(project=project,
-                                            firewall=firewall_rule).execute()
-        wait_for_global_operation(compute, project, result['name'])
+        result = gcp.compute.healthChecks().delete(
+            project=gcp.project, healthCheck=gcp.health_check.name).execute()
+        wait_for_global_operation(gcp, result['name'])
     except googleapiclient.errors.HttpError as http_error:
         logger.info('Delete failed: %s', http_error)
 
 
-def delete_health_check(compute, project, health_check):
+def delete_instance_groups(gcp):
+    for instance_group in gcp.instance_groups:
+        try:
+            result = gcp.compute.instanceGroupManagers().delete(
+                project=gcp.project,
+                zone=instance_group.zone,
+                instanceGroupManager=instance_group.name).execute()
+            timeout_sec = 180  # Deleting an instance group can be slow
+            wait_for_zone_operation(gcp,
+                                    instance_group.zone,
+                                    result['name'],
+                                    timeout_sec=timeout_sec)
+        except googleapiclient.errors.HttpError as http_error:
+            logger.info('Delete failed: %s', http_error)
+
+
+def delete_instance_template(gcp):
     try:
-        result = compute.healthChecks().delete(
-            project=project, healthCheck=health_check).execute()
-        wait_for_global_operation(compute, project, result['name'])
+        result = gcp.compute.instanceTemplates().delete(
+            project=gcp.project,
+            instanceTemplate=gcp.instance_template.name).execute()
+        wait_for_global_operation(gcp, result['name'])
     except googleapiclient.errors.HttpError as http_error:
         logger.info('Delete failed: %s', http_error)
 
 
-def delete_instance_group(compute, project, zone, instance_group):
-    try:
-        result = compute.instanceGroupManagers().delete(
-            project=project, zone=zone,
-            instanceGroupManager=instance_group).execute()
-        timeout_sec = 180  # Deleting an instance group can be slow
-        wait_for_zone_operation(compute,
-                                project,
-                                ZONE,
-                                result['name'],
-                                timeout_sec=timeout_sec)
-    except googleapiclient.errors.HttpError as http_error:
-        logger.info('Delete failed: %s', http_error)
-
-
-def delete_instance_template(compute, project, instance_template):
-    try:
-        result = compute.instanceTemplates().delete(
-            project=project, instanceTemplate=instance_template).execute()
-        wait_for_global_operation(compute, project, result['name'])
-    except googleapiclient.errors.HttpError as http_error:
-        logger.info('Delete failed: %s', http_error)
-
-
-def add_instances_to_backend(gcp, backend_service,
-                             instance_groups):
+def add_instances_to_backend(gcp, backend_service, instance_groups):
     config = {
         'backends': [{
             'group': instance_group.url,
@@ -890,9 +904,9 @@ def add_instances_to_backend(gcp, backend_service,
             'maxRate': 1
         } for instance_group in instance_groups],
     }
-    result = gcp.compute.backendServices().patch(project=gcp.project,
-                                             backendService=backend_service.name,
-                                             body=config).execute()
+    result = gcp.compute.backendServices().patch(
+        project=gcp.project, backendService=backend_service.name,
+        body=config).execute()
     wait_for_global_operation(gcp, result['name'])
 
 
@@ -901,8 +915,8 @@ def wait_for_global_operation(gcp,
                               timeout_sec=WAIT_FOR_OPERATION_SEC):
     start_time = time.time()
     while time.time() - start_time <= timeout_sec:
-        result = gcp.compute.globalOperations().get(project=gcp.project,
-                                                operation=operation).execute()
+        result = gcp.compute.globalOperations().get(
+            project=gcp.project, operation=operation).execute()
         if result['status'] == 'DONE':
             if 'error' in result:
                 raise Exception(result['error'])
@@ -912,14 +926,14 @@ def wait_for_global_operation(gcp,
                     timeout_sec)
 
 
-def wait_for_zone_operation(gcp, zone,
+def wait_for_zone_operation(gcp,
+                            zone,
                             operation,
                             timeout_sec=WAIT_FOR_OPERATION_SEC):
     start_time = time.time()
     while time.time() - start_time <= timeout_sec:
-        result = gcp.compute.zoneOperations().get(project=gcp.project,
-                                              zone=zone,
-                                              operation=operation).execute()
+        result = gcp.compute.zoneOperations().get(
+            project=gcp.project, zone=zone, operation=operation).execute()
         # print(result)
         if result['status'] == 'DONE':
             if 'error' in result:
@@ -930,13 +944,16 @@ def wait_for_zone_operation(gcp, zone,
                     timeout_sec)
 
 
-def wait_for_healthy_backends(gcp, backend_service,
-                              instance_group, timeout_sec=WAIT_FOR_BACKEND_SEC):
+def wait_for_healthy_backends(gcp,
+                              backend_service,
+                              instance_group,
+                              timeout_sec=WAIT_FOR_BACKEND_SEC):
     start_time = time.time()
     config = {'group': instance_group.url}
     while time.time() - start_time <= timeout_sec:
         result = gcp.compute.backendServices().getHealth(
-            project=gcp.project, backendService=backend_service.name,
+            project=gcp.project,
+            backendService=backend_service.name,
             body=config).execute()
         if 'healthStatus' in result:
             healthy = True
@@ -951,11 +968,11 @@ def wait_for_healthy_backends(gcp, backend_service,
                     (timeout_sec, result))
 
 
-def get_instance_names(gcp, zone, instance_group):
+def get_instance_names(gcp, instance_group):
     instance_names = []
     result = gcp.compute.instanceGroups().listInstances(
         project=gcp.project,
-        zone=zone,
+        zone=instance_group.zone,
         instanceGroup=instance_group.name,
         body={
             'instanceState': 'ALL'
@@ -989,16 +1006,23 @@ def start_xds_client(service_port):
     return client_process
 
 
-# class BackendService(object):
-#     def __init__(self):
-#         pass
+class InstanceGroup(object):
+
+    def __init__(self, name, url, zone):
+        self.name = name
+        self.url = url
+        self.zone = zone
+
 
 class GcpResource(object):
+
     def __init__(self, name, url):
         self.name = name
         self.url = url
 
+
 class GcpState(object):
+
     def __init__(self, compute, project, suffix, tolerate_gcp_errors):
         self.compute = compute
         self.project = project
@@ -1016,13 +1040,13 @@ class GcpState(object):
 
     def clean_up(self):
         delete_global_forwarding_rule(self)
-        delete_target_http_proxy(compute, PROJECT_ID, TARGET_PROXY_NAME)
-        delete_url_map(compute, PROJECT_ID, URL_MAP_NAME)
-        delete_backend_service(compute, PROJECT_ID, BACKEND_SERVICE_NAME)
-        delete_firewall(compute, PROJECT_ID, FIREWALL_RULE_NAME)
-        delete_health_check(compute, PROJECT_ID, HEALTH_CHECK_NAME)
-        delete_instance_group(compute, PROJECT_ID, ZONE, INSTANCE_GROUP_NAME)
-        delete_instance_template(compute, PROJECT_ID, TEMPLATE_NAME)
+        delete_target_http_proxy(self)
+        delete_url_map(self)
+        delete_backend_services(self)
+        delete_firewall(self)
+        delete_health_check(self)
+        delete_instance_groups(self)
+        delete_instance_template(self)
 
 
 # TODO: put in main()
@@ -1059,7 +1083,8 @@ client_process = None
 # WAIT_FOR_STATS_SEC = 30
 
 try:
-    gcp = GcpState(compute, args.project, args.gcp_suffix, args.tolerate_gcp_errors)
+    gcp = GcpState(compute, args.project, args.gcp_suffix,
+                   args.tolerate_gcp_errors)
     backend_service_url = None
     health_check_url = None
     instance_group_url = None
@@ -1068,9 +1093,9 @@ try:
     try:
         create_health_check(gcp, _BASE_HEALTH_CHECK_NAME)
         create_health_check_firewall_rule(gcp, _BASE_FIREWALL_RULE_NAME)
-        add_backend_service(gcp, _BASE_BACKEND_SERVICE_NAME )
-        create_url_map(gcp, _BASE_URL_MAP_NAME, gcp.backend_services[0], 
-            _BASE_SERVICE_HOST)
+        add_backend_service(gcp, _BASE_BACKEND_SERVICE_NAME)
+        create_url_map(gcp, _BASE_URL_MAP_NAME, gcp.backend_services[0],
+                       _BASE_SERVICE_HOST)
         create_target_http_proxy(gcp, _BASE_TARGET_PROXY_NAME)
         potential_service_ports = list(args.service_port_range)
         random.shuffle(potential_service_ports)
@@ -1090,13 +1115,10 @@ try:
         if not gcp.service_port:
             raise Exception('Failed to pick a service port in the range %s' %
                             args.service_port_range)
-        create_instance_template(gcp,
-                                                _BASE_TEMPLATE_NAME, 
-                                                args.network, 
-                                                args.source_image)
-        add_instance_group(compute, args.zone,
-                                                   _BASE_INSTANCE_GROUP_NAME,
-                                                   INSTANCE_GROUP_SIZE)
+        create_instance_template(gcp, _BASE_TEMPLATE_NAME, args.network,
+                                 args.source_image)
+        add_instance_group(compute, args.zone, _BASE_INSTANCE_GROUP_NAME,
+                           INSTANCE_GROUP_SIZE)
         add_instances_to_backend(gcp, BACKEND_SERVICE_NAME,
                                  [instance_group_url])
     except googleapiclient.errors.HttpError as http_error:
@@ -1130,13 +1152,10 @@ try:
         #         logger.warning('Using arbitrary service port in range: %d' %
         #                        service_port)
         # else:
-            raise http_error
+        raise http_error
 
     wait_for_healthy_backends(gcp, gcp.backend_services[0],
                               gcp.instance_groups[0])
-
-    instance_names = get_instance_names(gcp, args.zone,
-                                        gcp.instance_groups[0])
 
     client_process = start_xds_client(gcp.service_port)
 
@@ -1162,7 +1181,7 @@ try:
             INSTANCE_GROUP_NAME, instance_group_url, instance_names,
             service_port, template_url, WAIT_FOR_STATS_SEC)
     elif TEST_CASE == 'ping_pong':
-        test_ping_pong(instance_names, NUM_TEST_RPCS, WAIT_FOR_STATS_SEC)
+        test_ping_pong(gcp)
     elif TEST_CASE == 'remove_instance_group':
         test_remove_instance_group(compute, PROJECT_ID, ZONE,
                                    BACKEND_SERVICE_NAME, INSTANCE_GROUP_NAME,
