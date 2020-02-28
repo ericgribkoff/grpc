@@ -260,6 +260,37 @@ def test_backends_restart(compute, project, zone, instance_names,
                             stats.rpcs_by_peer[instance_names[i]],
                             new_stats.rpcs_by_peer[new_instance_names[i]])
 
+# TODO: rate balancing mode
+def test_new_instance_group_receives_traffic(compute, project,
+        zone, backend_service_name, primary_instance_group_name,
+        primary_instance_group_url,
+        primary_instance_names, service_port, template_url, stats_timeout_sec):
+    wait_until_only_given_backends_receive_load(primary_instance_names, stats_timeout_sec, min_rpcs=100)
+    secondary_instance_group_name = 'test-secondary-same-locality-ig' + args.gcp_suffix
+    try:
+        secondary_instance_group_url = create_instance_group(compute, project, zone,
+                                               secondary_instance_group_name,
+                                               2,
+                                               service_port, template_url)
+    except googleapiclient.errors.HttpError as http_error:
+        #TODO: handle this elsewhere
+        result = compute.instanceGroups().get(
+            project=project, zone=zone,
+            instanceGroup=secondary_instance_group_name).execute()
+        secondary_instance_group_url = result['selfLink']
+    # this uses patch, which replaces the old instance group
+    add_instances_to_backend(compute, project, backend_service_name,
+                             [primary_instance_group_url, secondary_instance_group_url])
+    wait_for_healthy_backends(compute, project, backend_service_name,
+                              secondary_instance_group_url, WAIT_FOR_BACKEND_SEC)
+    secondary_instance_names = get_instance_names(compute, project, zone,
+                                        secondary_instance_group_name)
+    wait_until_only_given_backends_receive_load(primary_instance_names + secondary_instance_names, stats_timeout_sec, min_rpcs=100)
+    stats = get_client_stats(100, 20)
+
+    if not args.keep_gcp_resources:
+        delete_instance_group(compute, project, zone, secondary_instance_group_name)
+
 
 def test_ping_pong(backends, num_rpcs, stats_timeout_sec):
     start_time = time.time()
@@ -337,24 +368,24 @@ def test_secondary_locality_gets_no_requests_on_partial_primary_failure(compute,
                             primary_zone,
                             result['name'],
                             timeout_sec=360)
-    remaining_primary_instance_names = list(primary_instance_names)
     start_time = time.time()
-    error_msg = None
-    while len(remaining_primary_instance_names) == len(primary_instance_names) and time.time() - start_time <= 360:
-        remaining_primary_instance_name = get_instance_names(compute, project, primary_zone,
+    while True:
+        remaining_primary_instance_names = get_instance_names(compute, project, primary_zone,
                                             primary_instance_group_name)
-    if len(remaining_primary_instance_names) == len(primary_instance_names):
-        raise Exception('Failed to resize primary instance group')
+        if len(remaining_primary_instance_names) < len(primary_instance_names):
+            break
+        if time.time() - start_time > 360:
+            raise Exception('Failed to resize primary instance group')
+        time.sleep(1)  
     # for instance in instance_names:
     #   # Instances in MIG auto-heal
     #   stop_instance(compute, project, zone, instance)
-    wait_until_only_given_backends_receive_load(remaining_primary_instance_name, 600, min_rpcs=100, no_failures=True)
+    wait_until_only_given_backends_receive_load(remaining_primary_instance_names, 600, min_rpcs=100, no_failures=True)
     stats = get_client_stats(100, 20) # not really necessary
     secondary_instances_with_load = [i for i in secondary_instance_names if i in stats.rpcs_by_peer]
     if secondary_instances_with_load:
         raise Exception('Unexpected RPCs to secondary instances: %s', stats)
-
-
+    # needs to be in finally
     if not args.keep_gcp_resources:
         delete_instance_group(compute, project, secondary_zone, secondary_instance_group_name)
     else:
@@ -925,8 +956,11 @@ try:
         test_change_backend_service(instance_names, NUM_TEST_RPCS,
                                     WAIT_FOR_STATS_SEC)
     elif TEST_CASE == 'new_instance_group_receives_traffic':
-        test_new_instance_group_receives_traffic(instance_names, NUM_TEST_RPCS,
-                                                 WAIT_FOR_STATS_SEC)
+        test_new_instance_group_receives_traffic(
+            compute, PROJECT_ID,
+            ZONE, BACKEND_SERVICE_NAME, INSTANCE_GROUP_NAME,
+            instance_group_url, instance_names, 
+            service_port, template_url, WAIT_FOR_STATS_SEC)
     elif TEST_CASE == 'ping_pong':
         test_ping_pong(instance_names, NUM_TEST_RPCS, WAIT_FOR_STATS_SEC)
     elif TEST_CASE == 'remove_instance_group':
@@ -934,14 +968,14 @@ try:
                                    WAIT_FOR_STATS_SEC)
     elif TEST_CASE == 'round_robin':
         test_round_robin(instance_names, NUM_TEST_RPCS, WAIT_FOR_STATS_SEC)
-    elif TEST_CASE == 'secondary_locality_gets_requests_on_primary_failure':
-        test_secondary_locality_gets_requests_on_primary_failure(compute, PROJECT_ID,
-            ZONE, BACKEND_SERVICE_NAME, INSTANCE_GROUP_NAME,
-            instance_group_url, instance_names, 
-            service_port, template_url, WAIT_FOR_STATS_SEC)
     elif TEST_CASE == 'secondary_locality_gets_no_requests_on_partial_primary_failure':
         test_secondary_locality_gets_no_requests_on_partial_primary_failure(
             compute, PROJECT_ID,
+            ZONE, BACKEND_SERVICE_NAME, INSTANCE_GROUP_NAME,
+            instance_group_url, instance_names, 
+            service_port, template_url, WAIT_FOR_STATS_SEC)
+    elif TEST_CASE == 'secondary_locality_gets_requests_on_primary_failure':
+        test_secondary_locality_gets_requests_on_primary_failure(compute, PROJECT_ID,
             ZONE, BACKEND_SERVICE_NAME, INSTANCE_GROUP_NAME,
             instance_group_url, instance_names, 
             service_port, template_url, WAIT_FOR_STATS_SEC)
