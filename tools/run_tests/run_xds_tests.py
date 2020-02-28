@@ -265,8 +265,6 @@ def test_backends_restart(compute, project, zone, instance_names,
                             new_stats.rpcs_by_peer[new_instance_names[i]])
 
 
-# TODO: put all created resource urls/names/zone etc into an object that is
-# passed around + including compute and project
 def test_change_backend_service(
     compute, project, zone, backend_service_name, backend_service_url,
     url_map_name, primary_instance_group_name, primary_instance_group_url,
@@ -348,7 +346,6 @@ def test_change_backend_service(
         wait_for_global_operation(compute, project, result['name'])
 
 
-# TODO: rate balancing mode
 def test_new_instance_group_receives_traffic(
     compute, project, zone, backend_service_name, primary_instance_group_name,
     primary_instance_group_url, primary_instance_names, service_port,
@@ -396,12 +393,12 @@ def test_ping_pong(gcp):
         error_msg = None
         stats = get_client_stats(NUM_TEST_RPCS, WAIT_FOR_STATS_SEC)
         rpcs_by_peer = stats.rpcs_by_peer
-        for backend in backends:
-            if backend not in rpcs_by_peer:
-                error_msg = 'Backend %s did not receive load' % backend
+        for instance in instance_names:
+            if instance not in rpcs_by_peer:
+                error_msg = 'Instance %s did not receive load' % instance
                 break
-        if not error_msg and len(rpcs_by_peer) > len(backends):
-            error_msg = 'Unexpected backend received load: %s' % rpcs_by_peer
+        if not error_msg and len(rpcs_by_peer) > len(instance_names):
+            error_msg = 'Unexpected instance received load: %s' % rpcs_by_peer
         if not error_msg:
             return
     raise Exception(error_msg)
@@ -646,7 +643,7 @@ def test_secondary_locality_gets_requests_on_primary_failure(
 
 def create_instance_template(gcp, name, network, source_image):
     config = {
-        'name': name + gcp.suffix,
+        'name': name,
         'properties': {
             'tags': {
                 'items': ['grpc-allow-healthcheck']
@@ -698,8 +695,8 @@ nohup build/install/grpc-interop-testing/bin/xds-test-server --port=%d 1>/dev/nu
 
 def add_instance_group(gcp, zone, name, size):
     config = {
-        'name': name + gcp.suffix,
-        'instanceTemplate': gpc.instance_template.url,
+        'name': name,
+        'instanceTemplate': gcp.instance_template.url,
         'targetSize': size,
         'namedPorts': [{
             'name': 'grpc',
@@ -720,7 +717,7 @@ def add_instance_group(gcp, zone, name, size):
 
 def create_health_check(gcp, name):
     config = {
-        'name': name + gcp.suffix,
+        'name': name,
         'type': 'TCP',
         'tcpHealthCheck': {
             'portName': 'grpc'
@@ -734,7 +731,7 @@ def create_health_check(gcp, name):
 
 def create_health_check_firewall_rule(gcp, name):
     config = {
-        'name': name + gcp.suffix,
+        'name': name,
         'direction': 'INGRESS',
         'allowed': [{
             'IPProtocol': 'tcp'
@@ -751,7 +748,7 @@ def create_health_check_firewall_rule(gcp, name):
 
 def add_backend_service(gcp, name):
     config = {
-        'name': name + gcp.suffix,
+        'name': name,
         'loadBalancingScheme': 'INTERNAL_SELF_MANAGED',
         'healthChecks': [gcp.health_check.url],
         'portName': 'grpc',
@@ -761,13 +758,13 @@ def add_backend_service(gcp, name):
                                                   body=config).execute()
     wait_for_global_operation(gcp, result['name'])
     gcp.backend_services.append(
-        GcpResources(config['name'], result['targetLink']))
+        GcpResource(config['name'], result['targetLink']))
 
 
 def create_url_map(gcp, name, backend_service, host_name):
     path_matcher_name = 'path-matcher'  # TODO: extract
     config = {
-        'name': name + gcp.suffix,
+        'name': name,
         'defaultService': backend_service.url,
         'pathMatchers': [{
             'name': path_matcher_name,
@@ -786,7 +783,7 @@ def create_url_map(gcp, name, backend_service, host_name):
 
 def create_target_http_proxy(gcp, name):
     config = {
-        'name': name + gcp.suffix,
+        'name': name,
         'url_map': gcp.url_map.url,
     }
     result = gcp.compute.targetHttpProxies().insert(project=gcp.project,
@@ -797,7 +794,7 @@ def create_target_http_proxy(gcp, name):
 
 def create_global_forwarding_rule(gcp, name, port):
     config = {
-        'name': name + gcp.suffix,
+        'name': name,
         'loadBalancingScheme': 'INTERNAL_SELF_MANAGED',
         'portRange': str(port),
         'IPAddress': '0.0.0.0',
@@ -815,7 +812,7 @@ def delete_global_forwarding_rule(gcp):
     try:
         result = gcp.compute.globalForwardingRules().delete(
             project=gcp.project,
-            forwardingRule=gcp.forwarding_rule.name).execute()
+            forwardingRule=gcp.global_forwarding_rule.name).execute()
         wait_for_global_operation(gcp, result['name'])
     except googleapiclient.errors.HttpError as http_error:
         logger.info('Delete failed: %s', http_error)
@@ -854,8 +851,7 @@ def delete_backend_services(gcp):
 def delete_firewall(gcp):
     try:
         result = gcp.compute.firewalls().delete(project=gcp.project,
-                                                firewall=gcp,
-                                                firewall_rule.name).execute()
+                                                firewall=gcp.health_check_firewall_rule.name).execute()
         wait_for_global_operation(gcp, result['name'])
     except googleapiclient.errors.HttpError as http_error:
         logger.info('Delete failed: %s', http_error)
@@ -1023,11 +1019,9 @@ class GcpResource(object):
 
 class GcpState(object):
 
-    def __init__(self, compute, project, suffix, tolerate_gcp_errors):
+    def __init__(self, compute, project):
         self.compute = compute
         self.project = project
-        self.suffix = suffix
-        self.tolerate_gcp_errors = tolerate_gcp_errors
         self.health_check = None
         self.health_check_firewall_rule = None
         self.backend_services = []
@@ -1035,18 +1029,24 @@ class GcpState(object):
         self.target_http_proxy = None
         self.global_forwarding_rule = None
         self.service_port = None
-        self.template_url = None
+        self.instance_template = None
         self.instance_groups = []
 
     def clean_up(self):
-        delete_global_forwarding_rule(self)
-        delete_target_http_proxy(self)
-        delete_url_map(self)
+        if self.global_forwarding_rule:
+            delete_global_forwarding_rule(self)
+        if self.target_http_proxy:
+            delete_target_http_proxy(self)
+        if self.url_map:
+            delete_url_map(self)
         delete_backend_services(self)
-        delete_firewall(self)
-        delete_health_check(self)
+        if self.health_check_firewall_rule:
+            delete_firewall(self)
+        if self.health_check:
+            delete_health_check(self)
         delete_instance_groups(self)
-        delete_instance_template(self)
+        if self.instance_template:
+            delete_instance_template(self)
 
 
 # TODO: put in main()
@@ -1065,15 +1065,17 @@ client_process = None
 # TEST_CASE = args.test_case
 # CLIENT_CMD = args.client_cmd
 # WAIT_FOR_BACKEND_SEC = args.wait_for_backend_sec
-# TEMPLATE_NAME = 'test-template' + args.gcp_suffix
-# INSTANCE_GROUP_NAME = 'test-ig' + args.gcp_suffix
-# HEALTH_CHECK_NAME = 'test-hc' + args.gcp_suffix
-# FIREWALL_RULE_NAME = 'test-fw-rule' + args.gcp_suffix
-# BACKEND_SERVICE_NAME = 'test-backend-service' + args.gcp_suffix
-# URL_MAP_NAME = 'test-map' + args.gcp_suffix
-# SERVICE_HOST = 'grpc-test' + args.gcp_suffix
-# TARGET_PROXY_NAME = 'test-target-proxy' + args.gcp_suffix
-# FORWARDING_RULE_NAME = 'test-forwarding-rule' + args.gcp_suffix
+
+_BASE_TEMPLATE_NAME = 'test-template'
+_BASE_INSTANCE_GROUP_NAME = 'test-ig'
+_BASE_HEALTH_CHECK_NAME = 'test-hc'
+_BASE_FIREWALL_RULE_NAME = 'test-fw-rule'
+_BASE_BACKEND_SERVICE_NAME = 'test-backend-service'
+_BASE_URL_MAP_NAME = 'test-map'
+_BASE_SERVICE_HOST = 'grpc-test'
+_BASE_TARGET_PROXY_NAME = 'test-target-proxy'
+_BASE_FORWARDING_RULE_NAME = 'test-forwarding-rule'
+
 # KEEP_GCP_RESOURCES = args.keep_gcp_resources
 # TOLERATE_GCP_ERRORS = args.tolerate_gcp_errors
 # STATS_PORT = args.stats_port
@@ -1083,28 +1085,31 @@ client_process = None
 # WAIT_FOR_STATS_SEC = 30
 
 try:
-    gcp = GcpState(compute, args.project, args.gcp_suffix,
-                   args.tolerate_gcp_errors)
-    backend_service_url = None
-    health_check_url = None
-    instance_group_url = None
-    service_port = None
-    template_url = None
+    gcp = GcpState(compute, args.project_id)
+    health_check_name = _BASE_HEALTH_CHECK_NAME + args.gcp_suffix
+    firewall_name = _BASE_FIREWALL_RULE_NAME + args.gcp_suffix
+    backend_service_name = _BASE_BACKEND_SERVICE_NAME + args.gcp_suffix
+    url_map_name = _BASE_URL_MAP_NAME + args.gcp_suffix
+    service_host_name = _BASE_SERVICE_HOST + args.gcp_suffix
+    target_http_proxy_name = _BASE_TARGET_PROXY_NAME + args.gcp_suffix
+    forwarding_rule_name = _BASE_FORWARDING_RULE_NAME + args.gcp_suffix
+    template_name = _BASE_TARGET_PROXY_NAME + args.gcp_suffix
+    instance_group_name = _BASE_INSTANCE_GROUP_NAME + args.gcp_suffix
     try:
-        create_health_check(gcp, _BASE_HEALTH_CHECK_NAME)
-        create_health_check_firewall_rule(gcp, _BASE_FIREWALL_RULE_NAME)
-        add_backend_service(gcp, _BASE_BACKEND_SERVICE_NAME)
-        create_url_map(gcp, _BASE_URL_MAP_NAME, gcp.backend_services[0],
-                       _BASE_SERVICE_HOST)
-        create_target_http_proxy(gcp, _BASE_TARGET_PROXY_NAME)
+        create_health_check(gcp, health_check_name)
+        create_health_check_firewall_rule(gcp, firewall_name)
+        add_backend_service(gcp, backend_service_name)
+        create_url_map(gcp, url_map_name, gcp.backend_services[0],
+                       service_host_name)
+        create_target_http_proxy(gcp, target_http_proxy_name)
         potential_service_ports = list(args.service_port_range)
         random.shuffle(potential_service_ports)
         for port in potential_service_ports:
             try:
                 create_global_forwarding_rule(
                     gcp,
-                    port,
-                    _BASE_FORWARDING_RULE_NAME,
+                    forwarding_rule_name,
+                    port
                 )
                 gcp.service_port = port
                 break
@@ -1115,44 +1120,44 @@ try:
         if not gcp.service_port:
             raise Exception('Failed to pick a service port in the range %s' %
                             args.service_port_range)
-        create_instance_template(gcp, _BASE_TEMPLATE_NAME, args.network,
+        create_instance_template(gcp, template_name, args.network,
                                  args.source_image)
-        add_instance_group(compute, args.zone, _BASE_INSTANCE_GROUP_NAME,
+        add_instance_group(gcp, args.zone, instance_group_name,
                            INSTANCE_GROUP_SIZE)
-        add_instances_to_backend(gcp, BACKEND_SERVICE_NAME,
-                                 [instance_group_url])
+        add_instances_to_backend(gcp, gcp.backend_services[0],
+                                 gcp.instance_groups)
     except googleapiclient.errors.HttpError as http_error:
-        # if TOLERATE_GCP_ERRORS: # TODO: move into add functions?
-        #     logger.warning(
-        #         'Failed to set up backends: %s. Continuing since '
-        #         '--tolerate_gcp_errors=true', http_error)
-        #     if not instance_group_url:
-        #         result = compute.instanceGroups().get(
-        #             project=PROJECT_ID,
-        #             zone=ZONE,
-        #             instanceGroup=INSTANCE_GROUP_NAME).execute()
-        #         instance_group_url = result['selfLink']
-        #     if not template_url:
-        #         result = compute.instanceTemplates().get(
-        #             project=PROJECT_ID,
-        #             instanceTemplate=TEMPLATE_NAME).execute()
-        #         template_url = result['selfLink']
-        #     if not backend_service_url:
-        #         result = compute.backendServices().get(
-        #             project=PROJECT_ID,
-        #             backendService=BACKEND_SERVICE_NAME).execute()
-        #         backend_service_url = result['selfLink']
-        #     if not health_check_url:
-        #         result = compute.healthChecks().get(
-        #             project=PROJECT_ID,
-        #             healthCheck=HEALTH_CHECK_NAME).execute()
-        #         health_check_url = result['selfLink']
-        #     if not service_port:
-        #         service_port = args.service_port_range[0]
-        #         logger.warning('Using arbitrary service port in range: %d' %
-        #                        service_port)
-        # else:
-        raise http_error
+        if TOLERATE_GCP_ERRORS:
+            logger.warning(
+                'Failed to set up backends: %s. Continuing since '
+                '--tolerate_gcp_errors=true', http_error)
+            if not gcp.instance_groups:
+                result = compute.instanceGroups().get(
+                    project=args.project_id,
+                    zone=args.zone,
+                    instanceGroup=instance_group_name).execute()
+                gcp.instance_groups.append(InstanceGroup(instance_group_name, result['selfLink'], args.zone))
+            if not gcp.instance_template:
+                result = compute.instanceTemplates().get(
+                    project=args.project_id,
+                    instanceTemplate=template_name).execute()
+                gcp.instance_template = GcpResource(template_name, result['selfLink'])
+            if not gcp.backend_services:
+                result = compute.backendServices().get(
+                    project=args.project_id,
+                    backendService=backend_service_name).execute()
+                gcp.backend_services.append(GcpResource(backend_service_name, result['selfLink']))
+            if not gcp.health_check:
+                result = compute.healthChecks().get(
+                    project=args.project_id,
+                    healthCheck=health_check_name).execute()
+                gcp.health_check = GcpResource(health_check_name, result['selfLink'])
+            if not gcp.service_port:
+                gcp.service_port = args.service_port_range[0]
+                logger.warning('Using arbitrary service port in range: %d' %
+                               gcp.service_port)
+        else:
+            raise http_error
 
     wait_for_healthy_backends(gcp, gcp.backend_services[0],
                               gcp.instance_groups[0])
@@ -1205,7 +1210,6 @@ try:
         sys.exit(1)
 finally:
     if client_process:
-        # TODO: raise exception if process already terminated
         client_process.terminate()
     if not KEEP_GCP_RESOURCES:
         logger.info('Cleaning up GCP resources. This may take some time.')
