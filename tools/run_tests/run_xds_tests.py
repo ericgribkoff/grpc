@@ -139,7 +139,7 @@ _WAIT_FOR_BACKEND_SEC = args.wait_for_backend_sec
 _WAIT_FOR_OPERATION_SEC = 60
 _INSTANCE_GROUP_SIZE = 2
 _NUM_TEST_RPCS = 10 * args.qps
-_WAIT_FOR_STATS_SEC = 30
+_WAIT_FOR_STATS_SEC = 60
 _BOOTSTRAP_TEMPLATE = """
 {{
   "node": {{
@@ -186,15 +186,15 @@ def get_client_stats(num_rpcs, timeout_sec):
 
 def wait_until_only_given_instances_receive_load(backends,
                                                  timeout_sec,
-                                                 min_rpcs=1,
-                                                 no_failures=False):
+                                                 num_rpcs=100):
+                                                 # allow_failures=False): # TODO: remove allow_failures?
     start_time = time.time()
     error_msg = None
     logger.debug('Waiting for %d sec until backends %s  receive load' %
                  (timeout_sec, backends))
     while time.time() - start_time <= timeout_sec:
         error_msg = None
-        stats = get_client_stats(max(len(backends), min_rpcs), timeout_sec)
+        stats = get_client_stats(num_rpcs, timeout_sec)
         rpcs_by_peer = stats.rpcs_by_peer
         for backend in backends:
             if backend not in rpcs_by_peer:
@@ -202,7 +202,8 @@ def wait_until_only_given_instances_receive_load(backends,
                 break
         if not error_msg and len(rpcs_by_peer) > len(backends):
             error_msg = 'Unexpected backend received load: %s' % rpcs_by_peer
-        if no_failures and stats.num_failures > 0:
+        # if not allow_failures and stats.num_failures > 0:
+        if stats.num_failures > 0:
             error_msg = '%d RPCs failed' % stats.num_failures
         if not error_msg:
             return
@@ -215,14 +216,14 @@ def test_backends_restart(gcp, backend_service, instance_group):
     start_time = time.time()
     wait_until_only_given_instances_receive_load(instance_names,
                                                  _WAIT_FOR_STATS_SEC)
-    stats = get_client_stats(100, _WAIT_FOR_STATS_SEC)
+    stats = get_client_stats(_NUM_TEST_RPCS, _WAIT_FOR_STATS_SEC)
     resize_instance_group(gcp, instance_group, 0)
-    wait_until_only_given_instances_receive_load([], 600)
+    wait_until_only_given_instances_receive_load([], _WAIT_FOR_BACKEND_SEC)
     resize_instance_group(gcp, instance_group, num_instances)
-    wait_for_healthy_backends(gcp, backend_service, instance_group, 600)
+    wait_for_healthy_backends(gcp, backend_service, instance_group, _WAIT_FOR_BACKEND_SEC)
     new_instance_names = get_instance_names(gcp, instance_group)
-    wait_until_only_given_instances_receive_load(new_instance_names, 600)
-    new_stats = get_client_stats(100, _WAIT_FOR_STATS_SEC)
+    wait_until_only_given_instances_receive_load(new_instance_names, _WAIT_FOR_BACKEND_SEC)
+    new_stats = get_client_stats(_NUM_TEST_RPCS, _WAIT_FOR_STATS_SEC)
     original_distribution = list(stats.rpcs_by_peer.values())
     original_distribution.sort()
     new_distribution = list(new_stats.rpcs_by_peer.values())
@@ -242,19 +243,15 @@ def test_change_backend_service(gcp, original_backend_service, instance_group,
     wait_for_healthy_backends(gcp, alternate_backend_service,
                               same_zone_instance_group)
     wait_until_only_given_instances_receive_load(original_backend_instances,
-                                                 _WAIT_FOR_STATS_SEC,
-                                                 min_rpcs=100,
-                                                 no_failures=True)
+                                                 _WAIT_FOR_STATS_SEC)
     try:
         patch_url_map_backend_service(gcp, alternate_backend_service)
-        stats = get_client_stats(500, 100)
+        stats = get_client_stats(_NUM_TEST_RPCS, _WAIT_FOR_STATS_SEC)
         if stats.num_failures > 0:
             raise Exception('Unexpected failure: %s', stats)
         wait_until_only_given_instances_receive_load(
             alternate_backend_instances,
-            _WAIT_FOR_STATS_SEC,
-            min_rpcs=200,
-            no_failures=True)
+            _WAIT_FOR_STATS_SEC)
     finally:
         patch_url_map_backend_service(gcp, original_backend_service)
         patch_backend_instances(gcp, alternate_backend_service, [])
@@ -265,8 +262,7 @@ def test_new_instance_group_receives_traffic(gcp, backend_service,
                                              same_zone_instance_group):
     instance_names = get_instance_names(gcp, instance_group)
     wait_until_only_given_instances_receive_load(instance_names,
-                                                 _WAIT_FOR_STATS_SEC,
-                                                 min_rpcs=100)
+                                                 _WAIT_FOR_STATS_SEC)
     try:
         patch_backend_instances(gcp,
                                 backend_service,
@@ -278,8 +274,7 @@ def test_new_instance_group_receives_traffic(gcp, backend_service,
         combined_instance_names = instance_names + get_instance_names(
             gcp, same_zone_instance_group)
         wait_until_only_given_instances_receive_load(combined_instance_names,
-                                                     360,
-                                                     min_rpcs=200)
+                                                     _WAIT_FOR_BACKEND_SEC)
     finally:
         patch_backend_instances(gcp, backend_service, [instance_group])
 
@@ -318,17 +313,16 @@ def test_remove_instance_group(gcp, backend_service, instance_group,
                                                       same_zone_instance_group)
         wait_until_only_given_instances_receive_load(instance_names +
                                                      same_zone_instance_names,
-                                                     360,
-                                                     min_rpcs=200)
+                                                     _WAIT_FOR_BACKEND_SEC)
         patch_backend_instances(gcp,
                                 backend_service, [same_zone_instance_group],
                                 balancing_mode='RATE')
         wait_until_only_given_instances_receive_load(same_zone_instance_names,
-                                                     360,
-                                                     min_rpcs=200,
-                                                     no_failures=True)
+                                                     _WAIT_FOR_BACKEND_SEC)
     finally:
         patch_backend_instances(gcp, backend_service, [instance_group])
+        wait_until_only_given_instances_receive_load(instance_names,
+                                                     _WAIT_FOR_BACKEND_SEC)
 
 
 def test_round_robin(gcp):
@@ -364,16 +358,13 @@ def test_secondary_locality_gets_no_requests_on_partial_primary_failure(
         secondary_instance_names = get_instance_names(
             gcp, secondary_zone_instance_group)
         wait_until_only_given_instances_receive_load(primary_instance_names,
-                                                     _WAIT_FOR_STATS_SEC,
-                                                     min_rpcs=200)
+                                                     _WAIT_FOR_STATS_SEC)
         original_size = len(primary_instance_names)
         resize_instance_group(gcp, primary_instance_group, original_size - 1)
         remaining_instance_names = get_instance_names(gcp,
                                                       primary_instance_group)
         wait_until_only_given_instances_receive_load(remaining_instance_names,
-                                                     600,
-                                                     min_rpcs=200,
-                                                     no_failures=True)
+                                                     _WAIT_FOR_BACKEND_SEC)
     finally:
         patch_backend_instances(gcp, backend_service, [primary_instance_group])
         resize_instance_group(gcp, primary_instance_group, original_size)
@@ -393,22 +384,18 @@ def test_secondary_locality_gets_requests_on_primary_failure(
         secondary_instance_names = get_instance_names(
             gcp, secondary_zone_instance_group)
         wait_until_only_given_instances_receive_load(primary_instance_names,
-                                                     _WAIT_FOR_STATS_SEC,
-                                                     min_rpcs=200)
+                                                     _WAIT_FOR_STATS_SEC)
         original_size = len(primary_instance_names)
         resize_instance_group(gcp, primary_instance_group, 0)
         wait_until_only_given_instances_receive_load(secondary_instance_names,
-                                                     600,
-                                                     min_rpcs=200,
-                                                     no_failures=True)
+                                                     _WAIT_FOR_BACKEND_SEC)
 
         resize_instance_group(gcp, primary_instance_group, original_size)
         new_instance_names = get_instance_names(gcp, primary_instance_group)
         wait_for_healthy_backends(gcp, backend_service, primary_instance_group,
                                   _WAIT_FOR_BACKEND_SEC)
         wait_until_only_given_instances_receive_load(new_instance_names,
-                                                     600,
-                                                     min_rpcs=100)
+                                                     _WAIT_FOR_BACKEND_SEC)
     finally:
         patch_backend_instances(gcp, backend_service, [primary_instance_group])
 
@@ -820,29 +807,6 @@ class InstanceGroup(object):
         self.zone = zone
 
 
-# class InstanceGroups(object):
-
-#     def __init__(self):
-#         self.primary_group = None
-#         self.alternate_group_in_primary_zone = None
-#         self.group_in_secondary_zone = None
-
-#     def groups(self):
-#         groups = [self.primary_group, self.alternate_group_in_primary_zone,
-#             self.group_in_secondary_zone]
-#         return [x for x in groups if x is not None]
-
-# class BackendServices(object):
-
-#     def __init__(self):
-#         self.primary_service = None
-#         self.alternate_service = None
-
-#     def services(self):
-#         services = [self.primary_service, self.alternate_service]
-#         return [x for x in services if x is not None]
-
-
 class GcpResource(object):
 
     def __init__(self, name, url):
@@ -882,7 +846,6 @@ class GcpState(object):
             delete_instance_template(self)
 
 
-# TODO: put in main()
 if args.compute_discovery_document:
     with open(args.compute_discovery_document, 'r') as discovery_doc:
         compute = googleapiclient.discovery.build_from_document(
@@ -942,7 +905,7 @@ try:
     except googleapiclient.errors.HttpError as http_error:
         if args.tolerate_gcp_errors:
             logger.warning(
-                'Failed to set up backends: %s. Continuing since '
+                'Failed to set up backends: %s. Attempting to continue since '
                 '--tolerate_gcp_errors=true', http_error)
             if not gcp.instance_template:
                 result = compute.instanceTemplates().get(
