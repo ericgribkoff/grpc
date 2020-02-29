@@ -186,8 +186,8 @@ def get_client_stats(num_rpcs, timeout_sec):
 
 def wait_until_only_given_instances_receive_load(backends,
                                                  timeout_sec,
-                                                 num_rpcs=100):
-    # allow_failures=False): # TODO: remove allow_failures?
+                                                 num_rpcs=100,
+                                                 allow_failures=False):
     start_time = time.time()
     error_msg = None
     logger.debug('Waiting for %d sec until backends %s  receive load' %
@@ -202,8 +202,7 @@ def wait_until_only_given_instances_receive_load(backends,
                 break
         if not error_msg and len(rpcs_by_peer) > len(backends):
             error_msg = 'Unexpected backend received load: %s' % rpcs_by_peer
-        # if not allow_failures and stats.num_failures > 0:
-        if stats.num_failures > 0:
+        if not allow_failures and stats.num_failures > 0:
             error_msg = '%d RPCs failed' % stats.num_failures
         if not error_msg:
             return
@@ -218,7 +217,9 @@ def test_backends_restart(gcp, backend_service, instance_group):
                                                  _WAIT_FOR_STATS_SEC)
     stats = get_client_stats(_NUM_TEST_RPCS, _WAIT_FOR_STATS_SEC)
     resize_instance_group(gcp, instance_group, 0)
-    wait_until_only_given_instances_receive_load([], _WAIT_FOR_BACKEND_SEC)
+    wait_until_only_given_instances_receive_load([],
+                                                 _WAIT_FOR_BACKEND_SEC,
+                                                 allow_failures=True)
     resize_instance_group(gcp, instance_group, num_instances)
     wait_for_healthy_backends(gcp, backend_service, instance_group,
                               _WAIT_FOR_BACKEND_SEC)
