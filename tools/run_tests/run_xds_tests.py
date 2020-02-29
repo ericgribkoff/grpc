@@ -100,7 +100,7 @@ argp.add_argument('--network',
                   default='global/networks/default',
                   help='GCP network to use')
 argp.add_argument('--service_port_range',
-                  default='8080:8180',
+                  default='8080:8100',
                   type=parse_port_range,
                   help='Listening port for created gRPC backends. Specified as '
                   'either a single int or as a range in the format min:max, in '
@@ -331,52 +331,31 @@ def test_ping_pong(gcp):
     raise Exception(error_msg)
 
 
-def test_remove_instance_group(compute, project, zone, backend_service_name,
-                               primary_instance_group_name,
-                               primary_instance_group_url,
-                               primary_instance_names, service_port,
-                               template_url, stats_timeout_sec):
-    secondary_instance_group_name = 'test-secondary-same-locality-ig' + args.gcp_suffix
+def test_remove_instance_group(
+            gcp, backend_service, instance_group, same_zone_instance_group):
     try:
-        secondary_instance_group_url = create_instance_group(
-            compute, project, zone, secondary_instance_group_name, 2,
-            service_port, template_url)
-    except googleapiclient.errors.HttpError as http_error:
-        #TODO: handle this elsewhere
-        result = compute.instanceGroups().get(
-            project=project,
-            zone=zone,
-            instanceGroup=secondary_instance_group_name).execute()
-        secondary_instance_group_url = result['selfLink']
-    # this uses patch, which replaces the old instance group
-    patch_backend_instances(
-        compute, project, backend_service_name,
-        [primary_instance_group_url, secondary_instance_group_url])
-    wait_for_healthy_backends(compute, project, backend_service_name,
-                              secondary_instance_group_url,
-                              WAIT_FOR_BACKEND_SEC)
-    secondary_instance_names = get_instance_names(
-        compute, project, zone, secondary_instance_group_name)
-    wait_until_only_given_instances_receive_load(primary_instance_names +
-                                                secondary_instance_names,
-                                                stats_timeout_sec,
-                                                min_rpcs=100)
-    stats = get_client_stats(100, 20)
-    patch_backend_instances(compute, project, backend_service_name,
-                             [secondary_instance_group_url])
-    stats = get_client_stats(500, 100)
-    if stats.num_failures > 0:
-        raise Exception('Unexpected failure: %s', stats)
-    wait_until_only_given_instances_receive_load(secondary_instance_names,
-                                                stats_timeout_sec,
-                                                min_rpcs=100,
-                                                no_failures=True)
-    if not args.keep_gcp_resources:
-        delete_instance_group(compute, project, zone,
-                              secondary_instance_group_name)
-    else:
-        patch_backend_instances(compute, project, backend_service_name,
-                                 [primary_instance_group_url])
+        patch_backend_instances(
+            gcp, backend_service,
+            [instance_group, same_zone_instance_group], balancing_mode='RATE')
+        wait_for_healthy_backends(gcp, backend_service,
+                                  same_zone_instance_group,
+                                  WAIT_FOR_BACKEND_SEC)
+        instance_names = get_instance_names(
+            gcp, instance_group)
+        same_zone_instance_names = get_instance_names(
+            gcp, same_zone_instance_group)
+        wait_until_only_given_instances_receive_load(instance_names + same_zone_instance_names,
+                                                    360,
+                                                    min_rpcs=200)
+        patch_backend_instances(
+            gcp, backend_service,
+            [same_zone_instance_group], balancing_mode='RATE')
+        wait_until_only_given_instances_receive_load(same_zone_instance_names,
+                                                    360,
+                                                    min_rpcs=200, no_failures=True)
+    finally:
+        patch_backend_instances(
+            gcp, backend_service, [instance_group])
 
 
 def test_round_robin(gcp):
@@ -456,7 +435,7 @@ def create_instance_template(gcp, name, network, source_image):
         'name': name,
         'properties': {
             'tags': {
-                'items': ['grpc-allow-healthcheck']
+                'items': ['allow-health-checks']
             },
             'machineType': 'e2-standard-2',
             'serviceAccounts': [{
@@ -548,7 +527,7 @@ def create_health_check_firewall_rule(gcp, name):
             'IPProtocol': 'tcp'
         }],
         'sourceRanges': ['35.191.0.0/16', '130.211.0.0/22'],
-        'targetTags': ['grpc-allow-healthcheck'],
+        'targetTags': ['allow-health-checks'],
     }
     result = gcp.compute.firewalls().insert(project=gcp.project,
                                             body=config).execute()
@@ -1067,11 +1046,8 @@ try:
     elif TEST_CASE == 'ping_pong':
         test_ping_pong(gcp)
     elif TEST_CASE == 'remove_instance_group':
-        test_remove_instance_group(compute, PROJECT_ID, ZONE,
-                                   BACKEND_SERVICE_NAME, INSTANCE_GROUP_NAME,
-                                   instance_group_url, instance_names,
-                                   service_port, template_url,
-                                   WAIT_FOR_STATS_SEC)
+        test_remove_instance_group(gcp, backend_service,
+            instance_group, same_zone_instance_group)
     elif TEST_CASE == 'round_robin':
         test_round_robin(gcp)
     elif TEST_CASE == 'secondary_locality_gets_no_requests_on_partial_primary_failure':
