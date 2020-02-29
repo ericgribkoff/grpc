@@ -155,6 +155,7 @@ _BOOTSTRAP_TEMPLATE = """
     ]
   }}]
 }}""" % args.xds_server
+_PATH_MATCHER_NAME = 'path-matcher'
 _BASE_TEMPLATE_NAME = 'test-template'
 _BASE_INSTANCE_GROUP_NAME = 'test-ig'
 _BASE_HEALTH_CHECK_NAME = 'test-hc'
@@ -245,21 +246,7 @@ def test_change_backend_service(gcp, original_backend_service, instance_group,
                                                  min_rpcs=100,
                                                  no_failures=True)
     try:
-        #TODO: extract/refactor
-        path_matcher_name = 'path-matcher'
-        config = {
-            'defaultService':
-                alternate_backend_service.url,
-            'pathMatchers': [{
-                'name': path_matcher_name,
-                'defaultService': alternate_backend_service.url,
-            }]
-        }
-        result = gcp.compute.urlMaps().patch(project=gcp.project,
-                                             urlMap=gcp.url_map.name,
-                                             body=config).execute()
-        wait_for_global_operation(gcp, result['name'])
-
+        patch_url_map_backend_service(gcp, alternate_backend_service)
         stats = get_client_stats(500, 100)
         if stats.num_failures > 0:
             raise Exception('Unexpected failure: %s', stats)
@@ -269,25 +256,8 @@ def test_change_backend_service(gcp, original_backend_service, instance_group,
             min_rpcs=200,
             no_failures=True)
     finally:
-        path_matcher_name = 'path-matcher'
-        config = {
-            'defaultService':
-                original_backend_service.url,
-            'pathMatchers': [{
-                'name': path_matcher_name,
-                'defaultService': original_backend_service.url,
-            }]
-        }
-        result = gcp.compute.urlMaps().patch(project=gcp.project,
-                                             urlMap=gcp.url_map.name,
-                                             body=config).execute()
-        wait_for_global_operation(gcp, result['name'])
+        patch_url_map_backend_service(gcp, original_backend_service)
         patch_backend_instances(gcp, alternate_backend_service, [])
-        # wait_until_only_given_instances_receive_load(
-        #     original_backend_instances,
-        #     _WAIT_FOR_BACKEND_SEC,
-        #     min_rpcs=200,
-        #     no_failures=True)
 
 
 def test_new_instance_group_receives_traffic(gcp, backend_service,
@@ -567,17 +537,16 @@ def add_backend_service(gcp, name):
 
 
 def create_url_map(gcp, name, backend_service, host_name):
-    path_matcher_name = 'path-matcher'  # TODO: extract
     config = {
         'name': name,
         'defaultService': backend_service.url,
         'pathMatchers': [{
-            'name': path_matcher_name,
+            'name': _PATH_MATCHER_NAME,
             'defaultService': backend_service.url,
         }],
         'hostRules': [{
             'hosts': [host_name],
-            'pathMatcher': path_matcher_name
+            'pathMatcher': _PATH_MATCHER_NAME
         }]
     }
     result = gcp.compute.urlMaps().insert(project=gcp.project,
@@ -733,6 +702,21 @@ def resize_instance_group(gcp, instance_group, new_size, timeout_sec=120):
         if time.time() - start_time > timeout_sec:
             raise Exception('Failed to resize primary instance group')
         time.sleep(1)
+
+
+def patch_url_map_backend_service(gcp, url_map, backend_service):
+    config = {
+        'defaultService':
+            backend_service.url,
+        'pathMatchers': [{
+            'name': _PATH_MATCHER_NAME,
+            'defaultService': backend_service.url,
+        }]
+    }
+    result = gcp.compute.urlMaps().patch(project=gcp.project,
+                                         urlMap=gcp.url_map.name,
+                                         body=config).execute()
+    wait_for_global_operation(gcp, result['name'])
 
 
 def wait_for_global_operation(gcp,
