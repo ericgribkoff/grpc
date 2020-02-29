@@ -189,7 +189,8 @@ def wait_until_only_given_instances_receive_load(backends,
                                                  no_failures=False):
     start_time = time.time()
     error_msg = None
-    logger.debug('Waiting for %d sec until backends %s  receive load' % (timeout_sec, backends))
+    logger.debug('Waiting for %d sec until backends %s  receive load' %
+                 (timeout_sec, backends))
     while time.time() - start_time <= timeout_sec:
         error_msg = None
         stats = get_client_stats(max(len(backends), min_rpcs), timeout_sec)
@@ -376,8 +377,7 @@ def test_round_robin(gcp):
         if abs(stats.rpcs_by_peer[instance] - expected_requests) > threshold:
             raise Exception(
                 'RPC peer distribution differs from expected by more than %d '
-                'for instance %s (%s)',
-                threshold, instance, stats)
+                'for instance %s (%s)', threshold, instance, stats)
 
 
 def test_secondary_locality_gets_no_requests_on_partial_primary_failure(
@@ -908,7 +908,6 @@ else:
 
 client_process = None
 
-
 try:
     gcp = GcpState(compute, args.project_id)
     health_check_name = _BASE_HEALTH_CHECK_NAME + args.gcp_suffix
@@ -942,8 +941,7 @@ try:
             except googleapiclient.errors.HttpError as http_error:
                 logger.warning(
                     'Got error %s when attempting to create forwarding rule to '
-                    'port %d. Retrying with another port.'
-                    % (http_error, port))
+                    'port %d. Retrying with another port.' % (http_error, port))
         if not gcp.service_port:
             raise Exception('Failed to pick a service port in the range %s' %
                             args.service_port_range)
@@ -1025,9 +1023,9 @@ try:
     wait_for_healthy_backends(gcp, backend_service, instance_group)
 
     cmd = args.client_cmd.format(service_host=service_host_name,
-                            service_port=gcp.service_port,
-                            stats_port=args.stats_port,
-                            qps=args.qps)
+                                 service_port=gcp.service_port,
+                                 stats_port=args.stats_port,
+                                 qps=args.qps)
     client_process = start_xds_client(cmd, gcp.service_port)
 
     if args.test_case == 'all':
