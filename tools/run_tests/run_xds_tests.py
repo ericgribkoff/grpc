@@ -171,7 +171,6 @@ BOOTSTRAP_TEMPLATE = """
     ]
   }}]
 }}""" % args.xds_server
-#ZONES = ['us-east1-c', 'us-central1-a', 'us-west1-b']
 
 
 def get_client_stats(num_rpcs, timeout_sec):
@@ -242,37 +241,15 @@ def test_backends_restart(gcp, backend_service, instance_group):
 
 
 def test_change_backend_service(gcp, original_backend_service, instance_group, alternate_backend_service, same_zone_instance_group):
-    # secondary_instance_group_name = 'test-secondary-same-locality-ig' + args.gcp_suffix
-    # try:
-    #     secondary_instance_group_url = create_instance_group(
-    #         compute, project, zone, secondary_instance_group_name, 2,
-    #         service_port, template_url)
-    # except googleapiclient.errors.HttpError as http_error:
-    #     #TODO: handle this elsewhere
-    #     result = compute.instanceGroups().get(
-    #         project=project,
-    #         zone=zone,
-    #         instanceGroup=secondary_instance_group_name).execute()
-    #     secondary_instance_group_url = result['selfLink']
-    # new_backend_service_name = 'test-secondary-backend-service' + args.gcp_suffix
-    # try:
-    #     new_backend_service_url = create_backend_service(
-    #         compute, project, new_backend_service_name, health_check_url)
-    # except googleapiclient.errors.HttpError as http_error:
-    #     result = compute.backendServices().get(
-    #         project=project, backendService=new_backend_service_name).execute()
-    #     new_backend_service_url = result['selfLink']
-    # patch_backend_instances(compute, project, new_backend_service_name,
-    #                          [secondary_instance_group_url])
-    # wait_for_healthy_backends(compute, project, new_backend_service_name,
-    #                           secondary_instance_group_url,
-    #                           WAIT_FOR_BACKEND_SEC)
     original_backend_instances = get_instance_names(gcp, instance_group)
     alternate_backend_instances = get_instance_names(gcp, same_zone_instance_group)
+    patch_backend_instances(gcp, alternate_backend_service, [same_zone_instance_group])
+    wait_for_healthy_backends(gcp, alternate_backend_service, same_zone_instance_group)
     wait_until_only_given_instances_receive_load(original_backend_instances,
                                                 WAIT_FOR_STATS_SEC,
                                                 min_rpcs=100, no_failures=True)
     try:
+        #TODO: extract/refactor
         path_matcher_name = 'path-matcher'
         config = {
             'defaultService':
@@ -295,6 +272,7 @@ def test_change_backend_service(gcp, original_backend_service, instance_group, a
                                                     min_rpcs=200,
                                                     no_failures=True)
     finally:
+        patch_backend_instances(gcp, alternate_backend_service, [])
         path_matcher_name = 'path-matcher'
         config = {
             'defaultService':
@@ -311,42 +289,27 @@ def test_change_backend_service(gcp, original_backend_service, instance_group, a
 
 
 def test_new_instance_group_receives_traffic(
-    compute, project, zone, backend_service_name, primary_instance_group_name,
-    primary_instance_group_url, primary_instance_names, service_port,
-    template_url, stats_timeout_sec):
-    wait_until_only_given_instances_receive_load(primary_instance_names,
-                                                stats_timeout_sec,
+        gcp, backend_service, instance_group, same_zone_instance_group):
+    instance_names = get_instance_names(
+            gcp, instance_group)
+    wait_until_only_given_instances_receive_load(instance_names,
+                                                WAIT_FOR_STATS_SEC,
                                                 min_rpcs=100)
-    secondary_instance_group_name = 'test-secondary-same-locality-ig' + args.gcp_suffix
     try:
-        secondary_instance_group_url = create_instance_group(
-            compute, project, zone, secondary_instance_group_name, 2,
-            service_port, template_url)
-    except googleapiclient.errors.HttpError as http_error:
-        #TODO: handle this elsewhere
-        result = compute.instanceGroups().get(
-            project=project,
-            zone=zone,
-            instanceGroup=secondary_instance_group_name).execute()
-        secondary_instance_group_url = result['selfLink']
-    # this uses patch, which replaces the old instance group
-    patch_backend_instances(
-        compute, project, backend_service_name,
-        [primary_instance_group_url, secondary_instance_group_url])
-    wait_for_healthy_backends(compute, project, backend_service_name,
-                              secondary_instance_group_url,
-                              WAIT_FOR_BACKEND_SEC)
-    secondary_instance_names = get_instance_names(
-        compute, project, zone, secondary_instance_group_name)
-    wait_until_only_given_instances_receive_load(primary_instance_names +
-                                                secondary_instance_names,
-                                                stats_timeout_sec,
-                                                min_rpcs=100)
-    stats = get_client_stats(100, 20)
-
-    if not args.keep_gcp_resources:
-        delete_instance_group(compute, project, zone,
-                              secondary_instance_group_name)
+        patch_backend_instances(
+            gcp, backend_service,
+            [instance_group, same_zone_instance_group], balancing_mode='RATE')
+        wait_for_healthy_backends(gcp, backend_service,
+                                  same_zone_instance_group,
+                                  WAIT_FOR_BACKEND_SEC)
+        combined_instance_names = instance_names + get_instance_names(
+            gcp, same_zone_instance_group)
+        wait_until_only_given_instances_receive_load(combined_instance_names,
+                                                    360,
+                                                    min_rpcs=200)
+    finally:
+        patch_backend_instances(
+            gcp, backend_service, [instance_group])
 
 
 def test_ping_pong(gcp):
@@ -1026,7 +989,6 @@ try:
         patch_backend_instances(gcp, backend_service, [instance_group])
         same_zone_instance_group = add_instance_group(gcp, args.zone,
             same_zone_instance_group_name, INSTANCE_GROUP_SIZE)
-        patch_backend_instances(gcp, alternate_backend_service, [same_zone_instance_group])
         secondary_zone_instance_group = add_instance_group(gcp, args.secondary_zone,
             secondary_zone_instance_group_name, INSTANCE_GROUP_SIZE)
     except googleapiclient.errors.HttpError as http_error:
@@ -1087,7 +1049,6 @@ try:
             raise http_error
 
     wait_for_healthy_backends(gcp, backend_service, instance_group)
-    wait_for_healthy_backends(gcp, alternate_backend_service, same_zone_instance_group)
 
     client_process = start_xds_client(gcp.service_port)
 
@@ -1101,10 +1062,8 @@ try:
         test_change_backend_service(gcp, backend_service, instance_group,
             alternate_backend_service, same_zone_instance_group)
     elif TEST_CASE == 'new_instance_group_receives_traffic':
-        test_new_instance_group_receives_traffic(
-            compute, PROJECT_ID, ZONE, BACKEND_SERVICE_NAME,
-            INSTANCE_GROUP_NAME, instance_group_url, instance_names,
-            service_port, template_url, WAIT_FOR_STATS_SEC)
+        test_new_instance_group_receives_traffic(gcp, backend_service,
+            instance_group, same_zone_instance_group)
     elif TEST_CASE == 'ping_pong':
         test_ping_pong(gcp)
     elif TEST_CASE == 'remove_instance_group':
