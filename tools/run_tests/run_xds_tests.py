@@ -74,6 +74,8 @@ argp.add_argument(
     '{service_host}, {service_port},{stats_port} and {qps} parameters using '
     'str.format(), and generate the GRPC_XDS_BOOTSTRAP file.')
 argp.add_argument('--zone', default='us-central1-a')
+argp.add_argument('--secondary_zone', default='us-west1-b', 
+    help='Zone to use for secondary TD locality tests')
 argp.add_argument('--qps', default=10, help='Client QPS')
 argp.add_argument(
     '--wait_for_backend_sec',
@@ -189,7 +191,7 @@ def get_client_stats(num_rpcs, timeout_sec):
             raise Exception('GetClientStats RPC failed')
 
 
-def wait_until_only_given_backends_receive_load(backends,
+def wait_until_only_given_instances_receive_load(backends,
                                                 timeout_sec,
                                                 min_rpcs=1,
                                                 no_failures=False):
@@ -216,60 +218,47 @@ def wait_until_only_given_backends_receive_load(backends,
     raise Exception(error_msg)
 
 
-# Takes approx 6 minutes
-def test_backends_restart(compute, project, zone, instance_names,
-                          instance_group_name, backend_service_name,
-                          instance_group_url, num_rpcs, stats_timeout_sec):
+def test_backends_restart(gcp):
+    backend_service = gcp.backend_services[0]
+    instance_group = gcp.instance_groups[0]
+    instance_names = get_instance_names(gcp, instance_group)
     start_time = time.time()
-    wait_until_only_given_backends_receive_load(instance_names,
-                                                stats_timeout_sec)
-    stats = get_client_stats(100, stats_timeout_sec)
-    result = compute.instanceGroupManagers().resize(
-        project=project,
-        zone=zone,
-        instanceGroupManager=instance_group_name,
+    wait_until_only_given_instances_receive_load(instance_names,
+                                                WAIT_FOR_STATS_SEC)
+    stats = get_client_stats(100, WAIT_FOR_STATS_SEC)
+    result = gcp.compute.instanceGroupManagers().resize(
+        project=gcp.project,
+        zone=instance_group.zone,
+        instanceGroupManager=instance_group.name,
         size=0).execute()
-    wait_for_zone_operation(compute,
-                            project,
-                            zone,
+    wait_for_zone_operation(gcp,
+                            instance_group.zone,
                             result['name'],
                             timeout_sec=360)
-    # for instance in instance_names:
-    #   # Instances in MIG auto-heal
-    #   stop_instance(compute, project, zone, instance)
-    wait_until_only_given_backends_receive_load([], 600)
+    wait_until_only_given_instances_receive_load([], 600)
     result = compute.instanceGroupManagers().resize(
-        project=project,
-        zone=zone,
-        instanceGroupManager=instance_group_name,
+        project=gcp.project,
+        zone=instance_group.zone,
+        instanceGroupManager=instance_group.name,
         size=len(instance_names)).execute()
-    wait_for_zone_operation(compute,
-                            project,
-                            zone,
+    wait_for_zone_operation(gcp,
+                            instance_group.zone,
                             result['name'],
                             timeout_sec=600)
-    wait_for_healthy_backends(compute, project, backend_service_name,
-                              instance_group_url, 600)
-    new_instance_names = get_instance_names(compute, project, zone,
-                                            instance_group_name)
-    # for instance in instance_names:
-    #   start_instance(compute, project, zone, instance)
-    wait_until_only_given_backends_receive_load(new_instance_names, 600)
-    new_stats = get_client_stats(100, stats_timeout_sec)
-    for i in range(len(instance_names)):
-        # fix
-        if abs(stats.rpcs_by_peer[instance_names[i]] -
-               new_stats.rpcs_by_peer[new_instance_names[i]]) > 1:
-            raise Exception('outside of threshold for ', new_instance_names[i],
-                            stats.rpcs_by_peer[instance_names[i]],
-                            new_stats.rpcs_by_peer[new_instance_names[i]])
+    wait_for_healthy_backends(gcp, backend_service,
+                              instance_group, 600)
+    new_instance_names = get_instance_names(gcp, instance_group)
+    wait_until_only_given_instances_receive_load(new_instance_names, 600)
+    new_stats = get_client_stats(100, WAIT_FOR_STATS_SEC)
+    original_distribution = list(stats.rpcs_by_peer.values())
+    original_distribution.sort()
+    new_distribution = list(new_stats.rpcs_by_peer.values())
+    new_distribution.sort()
+    if original_distribution != new_distribution:
+        raise Exception('Distributions do not match: ', stats, new_stats)
 
 
-def test_change_backend_service(
-    compute, project, zone, backend_service_name, backend_service_url,
-    url_map_name, primary_instance_group_name, primary_instance_group_url,
-    primary_instance_names, service_port, template_url, health_check_url,
-    stats_timeout_sec):
+def test_change_backend_service(gcp):
     secondary_instance_group_name = 'test-secondary-same-locality-ig' + args.gcp_suffix
     try:
         secondary_instance_group_url = create_instance_group(
@@ -290,7 +279,7 @@ def test_change_backend_service(
         result = compute.backendServices().get(
             project=project, backendService=new_backend_service_name).execute()
         new_backend_service_url = result['selfLink']
-    add_instances_to_backend(compute, project, new_backend_service_name,
+    patch_backend_instances(compute, project, new_backend_service_name,
                              [secondary_instance_group_url])
     wait_for_healthy_backends(compute, project, new_backend_service_name,
                               secondary_instance_group_url,
@@ -298,7 +287,7 @@ def test_change_backend_service(
     secondary_instance_names = get_instance_names(
         compute, project, zone, secondary_instance_group_name)
 
-    wait_until_only_given_backends_receive_load(primary_instance_names,
+    wait_until_only_given_instances_receive_load(primary_instance_names,
                                                 stats_timeout_sec,
                                                 min_rpcs=100)
 
@@ -319,7 +308,7 @@ def test_change_backend_service(
     stats = get_client_stats(500, 100)
     if stats.num_failures > 0:
         raise Exception('Unexpected failure: %s', stats)
-    wait_until_only_given_backends_receive_load(secondary_instance_names,
+    wait_until_only_given_instances_receive_load(secondary_instance_names,
                                                 stats_timeout_sec,
                                                 min_rpcs=100,
                                                 no_failures=True)
@@ -328,7 +317,7 @@ def test_change_backend_service(
         delete_instance_group(compute, project, zone,
                               secondary_instance_group_name)
     else:
-        add_instances_to_backend(
+        patch_backend_instances(
             compute, project, backend_service_name,
             [primary_instance_group_url, secondary_instance_group_url])
         path_matcher_name = 'path-matcher'
@@ -350,7 +339,7 @@ def test_new_instance_group_receives_traffic(
     compute, project, zone, backend_service_name, primary_instance_group_name,
     primary_instance_group_url, primary_instance_names, service_port,
     template_url, stats_timeout_sec):
-    wait_until_only_given_backends_receive_load(primary_instance_names,
+    wait_until_only_given_instances_receive_load(primary_instance_names,
                                                 stats_timeout_sec,
                                                 min_rpcs=100)
     secondary_instance_group_name = 'test-secondary-same-locality-ig' + args.gcp_suffix
@@ -366,7 +355,7 @@ def test_new_instance_group_receives_traffic(
             instanceGroup=secondary_instance_group_name).execute()
         secondary_instance_group_url = result['selfLink']
     # this uses patch, which replaces the old instance group
-    add_instances_to_backend(
+    patch_backend_instances(
         compute, project, backend_service_name,
         [primary_instance_group_url, secondary_instance_group_url])
     wait_for_healthy_backends(compute, project, backend_service_name,
@@ -374,7 +363,7 @@ def test_new_instance_group_receives_traffic(
                               WAIT_FOR_BACKEND_SEC)
     secondary_instance_names = get_instance_names(
         compute, project, zone, secondary_instance_group_name)
-    wait_until_only_given_backends_receive_load(primary_instance_names +
+    wait_until_only_given_instances_receive_load(primary_instance_names +
                                                 secondary_instance_names,
                                                 stats_timeout_sec,
                                                 min_rpcs=100)
@@ -422,7 +411,7 @@ def test_remove_instance_group(compute, project, zone, backend_service_name,
             instanceGroup=secondary_instance_group_name).execute()
         secondary_instance_group_url = result['selfLink']
     # this uses patch, which replaces the old instance group
-    add_instances_to_backend(
+    patch_backend_instances(
         compute, project, backend_service_name,
         [primary_instance_group_url, secondary_instance_group_url])
     wait_for_healthy_backends(compute, project, backend_service_name,
@@ -430,17 +419,17 @@ def test_remove_instance_group(compute, project, zone, backend_service_name,
                               WAIT_FOR_BACKEND_SEC)
     secondary_instance_names = get_instance_names(
         compute, project, zone, secondary_instance_group_name)
-    wait_until_only_given_backends_receive_load(primary_instance_names +
+    wait_until_only_given_instances_receive_load(primary_instance_names +
                                                 secondary_instance_names,
                                                 stats_timeout_sec,
                                                 min_rpcs=100)
     stats = get_client_stats(100, 20)
-    add_instances_to_backend(compute, project, backend_service_name,
+    patch_backend_instances(compute, project, backend_service_name,
                              [secondary_instance_group_url])
     stats = get_client_stats(500, 100)
     if stats.num_failures > 0:
         raise Exception('Unexpected failure: %s', stats)
-    wait_until_only_given_backends_receive_load(secondary_instance_names,
+    wait_until_only_given_instances_receive_load(secondary_instance_names,
                                                 stats_timeout_sec,
                                                 min_rpcs=100,
                                                 no_failures=True)
@@ -448,110 +437,84 @@ def test_remove_instance_group(compute, project, zone, backend_service_name,
         delete_instance_group(compute, project, zone,
                               secondary_instance_group_name)
     else:
-        add_instances_to_backend(compute, project, backend_service_name,
+        patch_backend_instances(compute, project, backend_service_name,
                                  [primary_instance_group_url])
 
 
-def test_round_robin(backends, num_rpcs, stats_timeout_sec):
+def test_round_robin(gcp):
+    instance_names = get_instance_names(gcp, gcp.instance_groups[0])
     threshold = 1
-    wait_until_only_given_backends_receive_load(backends, stats_timeout_sec)
-    stats = get_client_stats(num_rpcs, stats_timeout_sec)
+    wait_until_only_given_instances_receive_load(instance_names, WAIT_FOR_STATS_SEC)
+    stats = get_client_stats(NUM_TEST_RPCS, WAIT_FOR_STATS_SEC)
     requests_received = [stats.rpcs_by_peer[x] for x in stats.rpcs_by_peer]
     total_requests_received = sum(
         [stats.rpcs_by_peer[x] for x in stats.rpcs_by_peer])
-    if total_requests_received != num_rpcs:
+    if total_requests_received != NUM_TEST_RPCS:
         raise Exception('Unexpected RPC failures', stats)
-    expected_requests = total_requests_received / len(backends)
-    for backend in backends:
-        if abs(stats.rpcs_by_peer[backend] - expected_requests) > threshold:
+    expected_requests = total_requests_received / len(instance_names)
+    for instance in instance_names:
+        if abs(stats.rpcs_by_peer[instance] - expected_requests) > threshold:
             raise Exception(
-                'RPC peer distribution differs from expected by more than %d for backend %s (%s)',
-                threshold, backend, stats)
+                'RPC peer distribution differs from expected by more than %d for instance %s (%s)',
+                threshold, instance, stats)
 
 
 def test_secondary_locality_gets_no_requests_on_partial_primary_failure(
-    compute, project, primary_zone, backend_service_name,
-    primary_instance_group_name, primary_instance_group_url,
-    primary_instance_names, service_port, template_url, stats_timeout_sec):
-    secondary_zone = 'us-west1-b'  # In same region is not secondary, gets traffic 'us-central1-b'
-    # TODO: name will conflict with other secondary locality test, should
-    # reuse same secondary locality when test_case=all
-    secondary_instance_group_name = 'test-secondary-ig' + args.gcp_suffix
+    gcp, backend_service, primary_instance_group, secondary_zone_instance_group):
     try:
-        secondary_instance_group_url = create_instance_group(
-            compute, project, secondary_zone, secondary_instance_group_name, 2,
-            service_port, template_url)
-    except googleapiclient.errors.HttpError as http_error:
-        #TODO: handle this elsewhere
-        result = compute.instanceGroups().get(
-            project=project,
-            zone=secondary_zone,
-            instanceGroup=secondary_instance_group_name).execute()
-        secondary_instance_group_url = result['selfLink']
-    # this uses patch, which replaces the old instance group
-    add_instances_to_backend(
-        compute, project, backend_service_name,
-        [primary_instance_group_url, secondary_instance_group_url])
-    wait_for_healthy_backends(compute, project, backend_service_name,
-                              secondary_instance_group_url,
-                              WAIT_FOR_BACKEND_SEC)
-    secondary_instance_names = get_instance_names(
-        compute, project, secondary_zone, secondary_instance_group_name)
-    wait_until_only_given_backends_receive_load(primary_instance_names,
-                                                stats_timeout_sec,
-                                                min_rpcs=100)
-    stats = get_client_stats(100, 20)
-    secondary_instances_with_load = [
-        i for i in secondary_instance_names if i in stats.rpcs_by_peer
-    ]
-    if secondary_instances_with_load:
-        raise Exception('Unexpected RPCs to secondary instances: %s', stats)
-    result = compute.instanceGroupManagers().resize(
-        project=project,
-        zone=primary_zone,
-        instanceGroupManager=primary_instance_group_name,
-        size=1).execute()
-    wait_for_zone_operation(compute,
-                            project,
-                            primary_zone,
-                            result['name'],
-                            timeout_sec=360)
-    start_time = time.time()
-    while True:
-        remaining_primary_instance_names = get_instance_names(
-            compute, project, primary_zone, primary_instance_group_name)
-        if len(remaining_primary_instance_names) < len(primary_instance_names):
-            break
-        if time.time() - start_time > 360:
-            raise Exception('Failed to resize primary instance group')
-        time.sleep(1)
-    # for instance in instance_names:
-    #   # Instances in MIG auto-heal
-    #   stop_instance(compute, project, zone, instance)
-    wait_until_only_given_backends_receive_load(
-        remaining_primary_instance_names, 600, min_rpcs=100, no_failures=True)
-    stats = get_client_stats(100, 20)  # not really necessary
-    secondary_instances_with_load = [
-        i for i in secondary_instance_names if i in stats.rpcs_by_peer
-    ]
-    if secondary_instances_with_load:
-        raise Exception('Unexpected RPCs to secondary instances: %s', stats)
-    # needs to be in finally
-    if not args.keep_gcp_resources:
-        delete_instance_group(compute, project, secondary_zone,
-                              secondary_instance_group_name)
-    else:
-        #TODO  cleanup
-        result = compute.instanceGroupManagers().resize(
-            project=project,
-            zone=primary_zone,
-            instanceGroupManager=primary_instance_group_name,
-            size=len(primary_instance_names)).execute()
-        wait_for_zone_operation(compute,
-                                project,
-                                primary_zone,
+        patch_backend_instances(
+            gcp, backend_service, [primary_instance_group, secondary_zone_instance_group])
+        wait_for_healthy_backends(gcp, backend_service,
+                                  secondary_zone_instance_group,
+                                  WAIT_FOR_BACKEND_SEC)
+        primary_instance_names = get_instance_names(gcp, instance_group)
+        secondary_instance_names = get_instance_names(gcp, secondary_zone_instance_group)
+        wait_until_only_given_instances_receive_load(primary_instance_names,
+                                                    WAIT_FOR_STATS_SEC,
+                                                    min_rpcs=200)
+        result = gcp.compute.instanceGroupManagers().resize(
+            project=gcp.project,
+            zone=primary_instance_group.zone,
+            instanceGroupManager=primary_instance_group.name,
+            size=len(primary_instance_names)-1).execute()
+        wait_for_zone_operation(gcp, instance_group.zone,
                                 result['name'],
                                 timeout_sec=360)
+        start_time = time.time()
+        while True:
+            remaining_primary_instance_names = get_instance_names(
+                gcp, primary_instance_group)
+            if len(remaining_primary_instance_names) < len(primary_instance_names):
+                break
+            if time.time() - start_time > 360:
+                raise Exception('Failed to resize primary instance group')
+            time.sleep(1)
+        wait_until_only_given_instances_receive_load(
+            remaining_primary_instance_names, 600, min_rpcs=200, no_failures=True)
+    finally:
+        # Restore original configuration
+        patch_backend_instances(
+            gcp, backend_service, [primary_instance_group])
+
+        result = gcp.compute.instanceGroupManagers().resize(
+            project=gcp.project,
+            zone=primary_instance_group.zone,
+            instanceGroupManager=primary_instance_group.name,
+            size=len(primary_instance_names)).execute()
+        wait_for_zone_operation(gcp,
+                                primary_instance_group.zone,
+                                result['name'],
+                                timeout_sec=360)
+        # TODO: extract to helper function
+        start_time = time.time()
+        while True:
+            current_primary_instance_names = get_instance_names(
+                gcp, primary_instance_group)
+            if len(current_primary_instance_names) < len(primary_instance_names):
+                break
+            if time.time() - start_time > 360:
+                raise Exception('Failed to resize primary instance group')
+            time.sleep(1)
 
 
 def test_secondary_locality_gets_requests_on_primary_failure(
@@ -575,7 +538,7 @@ def test_secondary_locality_gets_requests_on_primary_failure(
             instanceGroup=secondary_instance_group_name).execute()
         secondary_instance_group_url = result['selfLink']
     # this uses patch, which replaces the old instance group
-    add_instances_to_backend(
+    patch_backend_instances(
         compute, project, backend_service_name,
         [primary_instance_group_url, secondary_instance_group_url])
     wait_for_healthy_backends(compute, project, backend_service_name,
@@ -583,7 +546,7 @@ def test_secondary_locality_gets_requests_on_primary_failure(
                               WAIT_FOR_BACKEND_SEC)
     secondary_instance_names = get_instance_names(
         compute, project, secondary_zone, secondary_instance_group_name)
-    wait_until_only_given_backends_receive_load(primary_instance_names,
+    wait_until_only_given_instances_receive_load(primary_instance_names,
                                                 stats_timeout_sec,
                                                 min_rpcs=100)
     stats = get_client_stats(100, 20)
@@ -605,7 +568,7 @@ def test_secondary_locality_gets_requests_on_primary_failure(
     # for instance in instance_names:
     #   # Instances in MIG auto-heal
     #   stop_instance(compute, project, zone, instance)
-    wait_until_only_given_backends_receive_load(secondary_instance_names,
+    wait_until_only_given_instances_receive_load(secondary_instance_names,
                                                 600,
                                                 min_rpcs=100)
     stats = get_client_stats(100, 20)  # not really necessary
@@ -625,7 +588,7 @@ def test_secondary_locality_gets_requests_on_primary_failure(
                                             primary_instance_group_name)
     # for instance in instance_names:
     #   start_instance(compute, project, zone, instance)
-    wait_until_only_given_backends_receive_load(new_instance_names,
+    wait_until_only_given_instances_receive_load(new_instance_names,
                                                 600,
                                                 min_rpcs=100)
     stats = get_client_stats(100, 20)
@@ -711,8 +674,9 @@ def add_instance_group(gcp, zone, name, size):
     result = gcp.compute.instanceGroupManagers().get(
         project=gcp.project, zone=zone,
         instanceGroupManager=config['name']).execute()
-    gcp.instance_groups.append(
-        InstanceGroup(config['name'], result['instanceGroup'], zone))
+    instance_group = InstanceGroup(config['name'], result['instanceGroup'], zone)
+    gcp.instance_groups.append(instance_group)
+    return instance_group
 
 
 def create_health_check(gcp, name):
@@ -757,8 +721,9 @@ def add_backend_service(gcp, name):
     result = gcp.compute.backendServices().insert(project=gcp.project,
                                                   body=config).execute()
     wait_for_global_operation(gcp, result['name'])
-    gcp.backend_services.append(
-        GcpResource(config['name'], result['targetLink']))
+    backend_service = GcpResource(config['name'], result['targetLink'])
+    gcp.backend_services.append(backend_service)
+    return backend_service
 
 
 def create_url_map(gcp, name, backend_service, host_name):
@@ -842,7 +807,7 @@ def delete_backend_services(gcp):
         try:
             result = gcp.compute.backendServices().delete(
                 project=gcp.project,
-                backendService=backend_service.name).execute()
+                backendService=gcp.backend_service.name).execute()
             wait_for_global_operation(gcp, result['name'])
         except googleapiclient.errors.HttpError as http_error:
             logger.info('Delete failed: %s', http_error)
@@ -892,12 +857,12 @@ def delete_instance_template(gcp):
         logger.info('Delete failed: %s', http_error)
 
 
-def add_instances_to_backend(gcp, backend_service, instance_groups):
+def patch_backend_instances(gcp, backend_service, instance_groups, balancing_mode='UTILIZATION'):
     config = {
         'backends': [{
             'group': instance_group.url,
-            'balancingMode': 'RATE',
-            'maxRate': 1
+            'balancingMode': balancing_mode,
+            'maxRate': 1 if balancing_mode == 'RATE' else None
         } for instance_group in instance_groups],
     }
     result = gcp.compute.backendServices().patch(
@@ -1010,6 +975,29 @@ class InstanceGroup(object):
         self.zone = zone
 
 
+# class InstanceGroups(object):
+
+#     def __init__(self):
+#         self.primary_group = None
+#         self.alternate_group_in_primary_zone = None
+#         self.group_in_secondary_zone = None
+
+#     def groups(self):
+#         groups = [self.primary_group, self.alternate_group_in_primary_zone,
+#             self.group_in_secondary_zone]
+#         return [x for x in groups if x is not None]
+
+# class BackendServices(object):
+
+#     def __init__(self):
+#         self.primary_service = None
+#         self.alternate_service = None
+
+#     def services(self):
+#         services = [self.primary_service, self.alternate_service]
+#         return [x for x in services if x is not None]
+
+
 class GcpResource(object):
 
     def __init__(self, name, url):
@@ -1031,6 +1019,7 @@ class GcpState(object):
         self.service_port = None
         self.instance_template = None
         self.instance_groups = []
+
 
     def clean_up(self):
         if self.global_forwarding_rule:
@@ -1089,16 +1078,19 @@ try:
     health_check_name = _BASE_HEALTH_CHECK_NAME + args.gcp_suffix
     firewall_name = _BASE_FIREWALL_RULE_NAME + args.gcp_suffix
     backend_service_name = _BASE_BACKEND_SERVICE_NAME + args.gcp_suffix
+    alternate_backend_service_name = _BASE_BACKEND_SERVICE_NAME + '-alternate' + args.gcp_suffix
     url_map_name = _BASE_URL_MAP_NAME + args.gcp_suffix
     service_host_name = _BASE_SERVICE_HOST + args.gcp_suffix
     target_http_proxy_name = _BASE_TARGET_PROXY_NAME + args.gcp_suffix
     forwarding_rule_name = _BASE_FORWARDING_RULE_NAME + args.gcp_suffix
     template_name = _BASE_TARGET_PROXY_NAME + args.gcp_suffix
     instance_group_name = _BASE_INSTANCE_GROUP_NAME + args.gcp_suffix
+    same_zone_instance_group_name = _BASE_INSTANCE_GROUP_NAME + '-same-zone' + args.gcp_suffix
+    secondary_zone_instance_group_name = _BASE_INSTANCE_GROUP_NAME + '-secondary-zone' + args.gcp_suffix
     try:
         create_health_check(gcp, health_check_name)
         create_health_check_firewall_rule(gcp, firewall_name)
-        add_backend_service(gcp, backend_service_name)
+        backend_service = add_backend_service(gcp, backend_service_name)
         create_url_map(gcp, url_map_name, gcp.backend_services[0],
                        service_host_name)
         create_target_http_proxy(gcp, target_http_proxy_name)
@@ -1122,10 +1114,13 @@ try:
                             args.service_port_range)
         create_instance_template(gcp, template_name, args.network,
                                  args.source_image)
-        add_instance_group(gcp, args.zone, instance_group_name,
+        instance_group = add_instance_group(gcp, args.zone, instance_group_name,
                            INSTANCE_GROUP_SIZE)
-        add_instances_to_backend(gcp, gcp.backend_services[0],
-                                 gcp.instance_groups)
+        patch_backend_instances(gcp, backend_service, [instance_group])
+        same_zone_instance_group = add_instance_group(gcp, args.zone,
+            same_zone_instance_group_name, INSTANCE_GROUP_SIZE)
+        secondary_zone_instance_group = add_instance_group(gcp, args.secondary_zone,
+            secondary_zone_instance_group_name, INSTANCE_GROUP_SIZE)
     except googleapiclient.errors.HttpError as http_error:
         if TOLERATE_GCP_ERRORS:
             logger.warning(
@@ -1136,7 +1131,20 @@ try:
                     project=args.project_id,
                     zone=args.zone,
                     instanceGroup=instance_group_name).execute()
-                gcp.instance_groups.append(InstanceGroup(instance_group_name, result['selfLink'], args.zone))
+                instance_group = InstanceGroup(instance_group_name, result['selfLink'], args.zone)
+                gcp.instance_groups.append(instance_group)
+                result = compute.instanceGroups().get(
+                    project=args.project_id,
+                    zone=args.zone,
+                    instanceGroup=same_zone_instance_group_name).execute()
+                same_zone_instance_group = InstanceGroup(same_zone_instance_group_name, result['selfLink'], args.zone)
+                gcp.instance_groups.append(same_zone_instance_group)
+                result = compute.instanceGroups().get(
+                    project=args.project_id,
+                    zone=args.secondary_zone,
+                    instanceGroup=secondary_zone_instance_group_name).execute()
+                secondary_zone_instance_group = InstanceGroup(secondary_zone_instance_group_name, result['selfLink'], args.secondary_zone)
+                gcp.instance_groups.append(secondary_zone_instance_group)                
             if not gcp.instance_template:
                 result = compute.instanceTemplates().get(
                     project=args.project_id,
@@ -1146,7 +1154,13 @@ try:
                 result = compute.backendServices().get(
                     project=args.project_id,
                     backendService=backend_service_name).execute()
-                gcp.backend_services.append(GcpResource(backend_service_name, result['selfLink']))
+                backend_service = GcpResource(backend_service_name, result['selfLink'])
+                gcp.backend_services.append(backend_service)
+                # result = compute.backendServices().get(
+                #     project=args.project_id,
+                #     backendService=alternate_backend_service_name).execute()
+                # alternate_backend_service = GcpResource(alternate_backend_service_name, result['selfLink'])
+                # gcp.backend_services.append(alternate_backend_service)
             if not gcp.health_check:
                 result = compute.healthChecks().get(
                     project=args.project_id,
@@ -1159,27 +1173,18 @@ try:
         else:
             raise http_error
 
-    wait_for_healthy_backends(gcp, gcp.backend_services[0],
-                              gcp.instance_groups[0])
+    wait_for_healthy_backends(gcp, backend_service, instance_group)
 
     client_process = start_xds_client(gcp.service_port)
 
     if TEST_CASE == 'all':
-        test_ping_pong(instance_names, NUM_TEST_RPCS, WAIT_FOR_STATS_SEC)
-        test_round_robin(instance_names, NUM_TEST_RPCS, WAIT_FOR_STATS_SEC)
+        test_ping_pong(gcp)
+        test_round_robin(gcp)
         # TODO: add other test cases here
     elif TEST_CASE == 'backends_restart':
-        test_backends_restart(compute, PROJECT_ID, ZONE, instance_names,
-                              INSTANCE_GROUP_NAME, BACKEND_SERVICE_NAME,
-                              instance_group_url, NUM_TEST_RPCS,
-                              WAIT_FOR_STATS_SEC)
+        test_backends_restart(gcp)
     elif TEST_CASE == 'change_backend_service':
-        test_change_backend_service(compute, PROJECT_ID, ZONE,
-                                    BACKEND_SERVICE_NAME, backend_service_url,
-                                    URL_MAP_NAME, INSTANCE_GROUP_NAME,
-                                    instance_group_url, instance_names,
-                                    service_port, template_url,
-                                    health_check_url, WAIT_FOR_STATS_SEC)
+        test_change_backend_service(gcp)
     elif TEST_CASE == 'new_instance_group_receives_traffic':
         test_new_instance_group_receives_traffic(
             compute, PROJECT_ID, ZONE, BACKEND_SERVICE_NAME,
@@ -1194,12 +1199,10 @@ try:
                                    service_port, template_url,
                                    WAIT_FOR_STATS_SEC)
     elif TEST_CASE == 'round_robin':
-        test_round_robin(instance_names, NUM_TEST_RPCS, WAIT_FOR_STATS_SEC)
+        test_round_robin(gcp)
     elif TEST_CASE == 'secondary_locality_gets_no_requests_on_partial_primary_failure':
         test_secondary_locality_gets_no_requests_on_partial_primary_failure(
-            compute, PROJECT_ID, ZONE, BACKEND_SERVICE_NAME,
-            INSTANCE_GROUP_NAME, instance_group_url, instance_names,
-            service_port, template_url, WAIT_FOR_STATS_SEC)
+            gcp, backend_service, instance_group, secondary_zone_instance_group)
     elif TEST_CASE == 'secondary_locality_gets_requests_on_primary_failure':
         test_secondary_locality_gets_requests_on_primary_failure(
             compute, PROJECT_ID, ZONE, BACKEND_SERVICE_NAME,
