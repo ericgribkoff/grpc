@@ -109,53 +109,10 @@ class XdsStatsWatcher {
   int start_id_;
   int end_id_;
   int rpcs_needed_;
+  int no_remote_peer_ = 0;
   std::map<std::string, int> rpcs_by_peer_;
-  int no_remote_peer_;
   std::mutex m_;
   std::condition_variable cv_;
-};
-
-class TestClient {
- public:
-  TestClient(const std::shared_ptr<Channel>& channel)
-      : stub_(TestService::NewStub(channel)) {}
-
-  void UnaryCall() {
-    SimpleResponse response;
-    ClientContext context;
-
-    int saved_request_id;
-    {
-      std::lock_guard<std::mutex> lk(mu);
-      saved_request_id = ++global_request_id;
-    }
-    std::chrono::system_clock::time_point deadline =
-        std::chrono::system_clock::now() +
-        std::chrono::seconds(FLAGS_rpc_timeout_sec);
-    context.set_deadline(deadline);
-    Status status = stub_->UnaryCall(
-        &context, SimpleRequest::default_instance(), &response);
-
-    {
-      std::lock_guard<std::mutex> lk(mu);
-      for (auto watcher : watchers) {
-        watcher->RpcCompleted(saved_request_id, response.hostname());
-      }
-    }
-
-    if (FLAGS_print_response) {
-      if (status.ok()) {
-        std::cout << "Greeting: Hello world, this is " << response.hostname()
-                  << ", from " << context.peer() << std::endl;
-      } else {
-        std::cout << "RPC failed: " << status.error_code() << ": "
-                  << status.error_message() << std::endl;
-      }
-    }
-  }
-
- private:
-  std::unique_ptr<TestService::Stub> stub_;
 };
 
 class LoadBalancerStatsServiceImpl : public LoadBalancerStatsService::Service {
@@ -183,9 +140,43 @@ class LoadBalancerStatsServiceImpl : public LoadBalancerStatsService::Service {
   }
 };
 
+void UnaryCall(std::shared_ptr<TestService::Stub> stub) {
+  SimpleResponse response;
+  ClientContext context;
+
+  int saved_request_id;
+  {
+    std::lock_guard<std::mutex> lk(mu);
+    saved_request_id = ++global_request_id;
+  }
+  std::chrono::system_clock::time_point deadline =
+      std::chrono::system_clock::now() +
+      std::chrono::seconds(FLAGS_rpc_timeout_sec);
+  context.set_deadline(deadline);
+  Status status =
+      stub->UnaryCall(&context, SimpleRequest::default_instance(), &response);
+
+  {
+    std::lock_guard<std::mutex> lk(mu);
+    for (auto watcher : watchers) {
+      watcher->RpcCompleted(saved_request_id, response.hostname());
+    }
+  }
+
+  if (FLAGS_print_response) {
+    if (status.ok()) {
+      std::cout << "Greeting: Hello world, this is " << response.hostname()
+                << ", from " << context.peer() << std::endl;
+    } else {
+      std::cout << "RPC failed: " << status.error_code() << ": "
+                << status.error_message() << std::endl;
+    }
+  }
+}
+
 void RunTestLoop(const std::string& server,
                  std::chrono::duration<double> duration_per_query) {
-  TestClient client(
+  std::shared_ptr<TestService::Stub> stub = TestService::NewStub(
       grpc::CreateChannel(server, grpc::InsecureChannelCredentials()));
   std::chrono::time_point<std::chrono::system_clock> start =
       std::chrono::system_clock::now();
@@ -195,7 +186,8 @@ void RunTestLoop(const std::string& server,
     elapsed = std::chrono::system_clock::now() - start;
     if (elapsed > duration_per_query) {
       start = std::chrono::system_clock::now();
-      client.UnaryCall();
+      std::thread t(&UnaryCall, stub);
+      t.detach();
     }
   }
 }
