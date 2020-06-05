@@ -495,21 +495,32 @@ def test_secondary_locality_gets_no_requests_on_partial_primary_failure(
         # assignment post-patch.
         time.sleep(_WAIT_FOR_VALID_CONFIG_SEC)
         if not is_primary_instance_group(gcp, primary_instance_group):
+            logger.info(
+                'Swapping primary and secondary'
+            )
             # Swap expectation of primary and secondary instance groups.
             (primary_instance_group,
              secondary_instance_group) = (secondary_instance_group,
                                           primary_instance_group)
         primary_instance_names = get_instance_names(gcp, primary_instance_group)
+        logger.info(
+            'Instance names: %s' % primary_instance_names
+        )
         wait_until_all_rpcs_go_to_given_backends(primary_instance_names,
                                                  _WAIT_FOR_STATS_SEC)
         original_size = len(primary_instance_names)
         try:
             resize_instance_group(gcp, primary_instance_group,
-                                  original_size - 1)
+                                  1) #original_size - 1)
             remaining_instance_names = get_instance_names(
                 gcp, primary_instance_group)
-            wait_until_all_rpcs_go_to_given_backends(remaining_instance_names,
-                                                     _WAIT_FOR_BACKEND_SEC)
+            logger.info(
+                'Remaining instance names: %s' % remaining_instance_names
+            )
+            for i in range(20):
+              logger.info('loop %d' % i)
+              wait_until_all_rpcs_go_to_given_backends(remaining_instance_names,
+                                                       _WAIT_FOR_BACKEND_SEC)
         finally:
             resize_instance_group(gcp, primary_instance_group, original_size)
     finally:
@@ -1387,8 +1398,8 @@ try:
         instance_group = add_instance_group(gcp, args.zone, instance_group_name,
                                             _INSTANCE_GROUP_SIZE)
         patch_backend_instances(gcp, backend_service, [instance_group])
-        same_zone_instance_group = add_instance_group(
-            gcp, args.zone, same_zone_instance_group_name, _INSTANCE_GROUP_SIZE)
+        # same_zone_instance_group = add_instance_group(
+        #     gcp, args.zone, same_zone_instance_group_name, _INSTANCE_GROUP_SIZE)
         if _USE_SECONDARY_IG:
             secondary_zone_instance_group = add_instance_group(
                 gcp, args.secondary_zone, secondary_zone_instance_group_name,
