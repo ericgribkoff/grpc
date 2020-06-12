@@ -693,7 +693,7 @@ sudo apt update
 sudo apt install -y git default-jdk
 mkdir java_server
 pushd java_server
-git clone https://github.com/grpc/grpc-java.git
+git clone -b xds_server_health https://github.com/ericgribkoff/grpc-java.git
 pushd grpc-java
 pushd interop-testing
 ../gradlew installDist -x test -PskipCodegen=true -PskipAndroid=true
