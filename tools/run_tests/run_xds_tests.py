@@ -508,21 +508,28 @@ def test_secondary_locality_gets_no_requests_on_partial_primary_failure(
         )
         wait_until_all_rpcs_go_to_given_backends(primary_instance_names,
                                                  _WAIT_FOR_STATS_SEC)
-        original_size = len(primary_instance_names)
+        instances_to_stop = primary_instance_names[:-1]
+        remaining_instances = primary_instance_names[-1:]
         try:
-            resize_instance_group(gcp, primary_instance_group,
-                                  1) #original_size - 1)
-            remaining_instance_names = get_instance_names(
-                gcp, primary_instance_group)
+            for instance in instances_to_stop:
+                with grpc.insecure_channel('%s:%d' % (primary_instance_names[i], args.stats_port)) as channel:
+                    stub = test_pb2_grpc.XdsUpdateHealthServiceStub(channel)
+                    stub.SetNotServing(empty_pb2.Empty())
+            #resize_instance_group(gcp, primary_instance_group,
+            #                      1) #original_size - 1)
             logger.info(
-                'Remaining instance names: %s' % remaining_instance_names
+                'Remaining instance names: %s' % remaining_instances
             )
-            for i in range(20):
+            for i in range(10):
               logger.info('loop %d' % i)
-              wait_until_all_rpcs_go_to_given_backends(remaining_instance_names,
+              wait_until_all_rpcs_go_to_given_backends(remaining_instances,
                                                        _WAIT_FOR_BACKEND_SEC)
         finally:
-            resize_instance_group(gcp, primary_instance_group, original_size)
+            for instance in instances_to_stop:
+                with grpc.insecure_channel('%s:%d' % (primary_instance_names[i], args.stats_port)) as channel:
+                    stub = test_pb2_grpc.XdsUpdateHealthServiceStub(channel)
+                    stub.SetServing(empty_pb2.Empty())
+            #resize_instance_group(gcp, primary_instance_group, original_size)
     finally:
         patch_backend_instances(gcp, backend_service, [primary_instance_group])
 
