@@ -513,7 +513,7 @@ def test_secondary_locality_gets_no_requests_on_partial_primary_failure(
         remaining_instances = primary_instance_names[-1:]
         try:
             for instance in instances_to_stop:
-                with grpc.insecure_channel('%s:%d' % (instance, args.stats_port)) as channel:
+                with grpc.insecure_channel('%s:%d' % (instance, gcp.service_port)) as channel:
                     stub = test_pb2_grpc.XdsUpdateHealthServiceStub(channel)
                     stub.SetNotServing(empty_pb2.Empty())
             #resize_instance_group(gcp, primary_instance_group,
@@ -527,7 +527,7 @@ def test_secondary_locality_gets_no_requests_on_partial_primary_failure(
                                                        _WAIT_FOR_BACKEND_SEC)
         finally:
             for instance in instances_to_stop:
-                with grpc.insecure_channel('%s:%d' % (instance, args.stats_port)) as channel:
+                with grpc.insecure_channel('%s:%d' % (instance, gcp.service_port)) as channel:
                     stub = test_pb2_grpc.XdsUpdateHealthServiceStub(channel)
                     stub.SetServing(empty_pb2.Empty())
             #resize_instance_group(gcp, primary_instance_group, original_size)
