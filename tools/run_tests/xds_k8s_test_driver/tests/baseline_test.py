@@ -60,6 +60,14 @@ class BaselineTest(xds_k8s_testcase.RegularXdsKubernetesTestCase):
         with self.subTest('9_test_server_received_rpcs_from_test_client'):
             self.assertSuccessfulRpcs(test_client)
 
+        with self.subTest('9_test_round_robin'):
+            client_rpc_stats = self.getClientRpcStats(test_client, 100)
+            requests_received = [client_rpc_stats.rpcs_by_peer[x] for x in client_rpc_stats.rpcs_by_peer]
+            total_requests_received = sum(requests_received)
+            self.assertEqual(total_requests_received, 100)
+            expected_requests = total_requests_received / len(test_servers)
+            self.assertTrue(all([abs(x - expected_requests) <= 1 for x in requests_received]))
+
 
 if __name__ == '__main__':
     absltest.main(failfast=True)

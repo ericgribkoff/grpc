@@ -151,7 +151,7 @@ class XdsKubernetesTestCase(absltest.TestCase):
     def assertSuccessfulRpcs(self,
                              test_client: XdsTestClient,
                              num_rpcs: int = 100):
-        lb_stats = self.sendRpcs(test_client, num_rpcs)
+        lb_stats = self.getClientRpcStats(test_client, num_rpcs)
         self.assertAllBackendsReceivedRpcs(lb_stats)
         failed = int(lb_stats.num_failures)
         self.assertLessEqual(
@@ -178,7 +178,7 @@ class XdsKubernetesTestCase(absltest.TestCase):
     def assertFailedRpcs(self,
                          test_client: XdsTestClient,
                          num_rpcs: Optional[int] = 100):
-        lb_stats = self.sendRpcs(test_client, num_rpcs)
+        lb_stats = self.getClientRpcStats(test_client, num_rpcs)
         failed = int(lb_stats.num_failures)
         self.assertEqual(
             failed,
@@ -186,7 +186,7 @@ class XdsKubernetesTestCase(absltest.TestCase):
             msg=f'Expected all RPCs to fail: {failed} of {num_rpcs} failed')
 
     @staticmethod
-    def sendRpcs(test_client: XdsTestClient,
+    def getClientRpcStats(test_client: XdsTestClient,
                  num_rpcs: int) -> LoadBalancerStatsResponse:
         lb_stats = test_client.get_load_balancer_stats(num_rpcs=num_rpcs)
         logger.info(
