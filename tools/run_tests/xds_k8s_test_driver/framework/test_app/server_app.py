@@ -183,10 +183,10 @@ class KubernetesServerRunner(base_runner.KubernetesBaseRunner):
             maintenance_port=None,
             secure_mode=False,
             server_id=None,
-            replica_count=1) -> XdsTestServer:
-        # TODO(sergiitk): multiple replicas
-        if replica_count != 1:
-            raise NotImplementedError("Multiple replicas not yet supported")
+            replica_count=1) -> Iterator[XdsTestServer]:
+        # # TODO(sergiitk): multiple replicas
+        # if replica_count != 1:
+        #     raise NotImplementedError("Multiple replicas not yet supported")
 
         # Implementation detail: in secure mode, maintenance ("backchannel")
         # port must be different from the test port so communication with
@@ -251,27 +251,32 @@ class KubernetesServerRunner(base_runner.KubernetesBaseRunner):
 
         # Wait for pods running
         pods = self.k8s_namespace.list_deployment_pods(self.deployment)
+
+        servers = []
         for pod in pods:
             self._wait_pod_started(pod.metadata.name)
 
-        # TODO(sergiitk): This is why multiple replicas not yet supported
-        pod = pods[0]
-        pod_ip = pod.status.pod_ip
-        rpc_host = None
-        # Experimental, for local debugging.
-        if self.debug_use_port_forwarding:
-            logger.info('LOCAL DEV MODE: Enabling port forwarding to %s:%s',
-                        pod_ip, maintenance_port)
-            self.port_forwarder = self.k8s_namespace.port_forward_pod(
-                pod, remote_port=maintenance_port)
-            rpc_host = self.k8s_namespace.PORT_FORWARD_LOCAL_ADDRESS
+            # TODO(sergiitk): This is why multiple replicas not yet supported
+            # pod = pods[0]
+            pod_ip = pod.status.pod_ip
+            rpc_host = None
+            # Experimental, for local debugging.
+            if self.debug_use_port_forwarding:
+                # TODO(ericgribkoff) Handle multiple replicas and port forwarding
+                logger.info('LOCAL DEV MODE: Enabling port forwarding to %s:%s',
+                            pod_ip, maintenance_port)
+                self.port_forwarder = self.k8s_namespace.port_forward_pod(
+                    pod, remote_port=maintenance_port)
+                rpc_host = self.k8s_namespace.PORT_FORWARD_LOCAL_ADDRESS
 
-        return XdsTestServer(ip=pod_ip,
-                             rpc_port=test_port,
-                             maintenance_port=maintenance_port,
-                             secure_mode=secure_mode,
-                             server_id=server_id,
-                             rpc_host=rpc_host)
+            # TODO - loop here, return tuple of XdsTestServers
+            servers.append(XdsTestServer(ip=pod_ip,
+                                 rpc_port=test_port,
+                                 maintenance_port=maintenance_port,
+                                 secure_mode=secure_mode,
+                                 server_id=server_id,
+                                 rpc_host=rpc_host))
+        return servers
 
     def cleanup(self, *, force=False, force_namespace=False):
         if self.port_forwarder:

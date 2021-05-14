@@ -18,6 +18,7 @@ import logging
 import time
 from typing import Optional, Tuple
 from google.protobuf import json_format
+from typing import Iterable, Optional, Tuple
 
 from absl import flags
 from absl.testing import absltest
@@ -251,14 +252,15 @@ class RegularXdsKubernetesTestCase(XdsKubernetesTestCase):
             stats_port=self.client_port,
             reuse_namespace=self.server_namespace == self.client_namespace)
 
-    def startTestServer(self, replica_count=1, **kwargs) -> XdsTestServer:
-        test_server = self.server_runner.run(
+    def startTestServer(self, replica_count=1, **kwargs) -> Iterable[XdsTestServer]:
+        test_servers = self.server_runner.run(
             replica_count=replica_count,
             test_port=self.server_port,
             maintenance_port=self.server_maintenance_port,
             **kwargs)
-        test_server.set_xds_address(self.server_xds_host, self.server_xds_port)
-        return test_server
+        for test_server in test_servers:
+            test_server.set_xds_address(self.server_xds_host, self.server_xds_port)
+        return test_servers
 
     def startTestClient(self, test_server: XdsTestServer,
                         **kwargs) -> XdsTestClient:
