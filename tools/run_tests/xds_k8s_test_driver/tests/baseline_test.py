@@ -30,19 +30,35 @@ class BaselineTest(xds_k8s_testcase.RegularXdsKubernetesTestCase):
 
     def test_traffic_director_grpc_setup(self):
         with self.subTest('0_create_health_check'):
-            self.td.create_health_check()
+            # TODO(ericgribkoff) Structure these appropriately (without subTests?)
+            if xds_k8s_testcase.USE_EXISTING_RESOURCES.value:
+                self.td.load_health_check()
+            else:
+                self.td.create_health_check()
 
         with self.subTest('1_create_backend_service'):
-            self.td.create_backend_service()
+            if xds_k8s_testcase.USE_EXISTING_RESOURCES.value:
+                self.td.load_backend_service()
+            else:
+                self.td.create_backend_service()
 
         with self.subTest('2_create_url_map'):
-            self.td.create_url_map(self.server_xds_host, self.server_xds_port)
+            if xds_k8s_testcase.USE_EXISTING_RESOURCES.value:
+                self.td.load_url_map()
+            else:
+                self.td.create_url_map(self.server_xds_host, self.server_xds_port)
 
         with self.subTest('3_create_target_proxy'):
-            self.td.create_target_proxy()
+            if xds_k8s_testcase.USE_EXISTING_RESOURCES.value:
+                self.td.load_target_proxy()
+            else:
+                self.td.create_target_proxy()
 
         with self.subTest('4_create_forwarding_rule'):
-            self.td.create_forwarding_rule(self.server_xds_port)
+            if xds_k8s_testcase.USE_EXISTING_RESOURCES.value:
+                self.td.load_forwarding_rule()
+            else:
+                self.td.create_forwarding_rule(self.server_xds_port)
 
         with self.subTest('5_start_test_server'):
             test_servers: list[_XdsTestServer] = self.startTestServer(replica_count=2)

@@ -77,6 +77,10 @@ class ComputeV1(gcp.api.GcpProjectApiResource):
                 health_check_field: health_check_settings,
             })
 
+    def get_health_check(self, name: str) -> GcpResource:
+        return self._get_resource(self.api.healthChecks(),
+                                  healthCheck=name)
+
     def delete_health_check(self, name):
         self._delete_resource(self.api.healthChecks(), 'healthCheck', name)
 
@@ -181,6 +185,10 @@ class ComputeV1(gcp.api.GcpProjectApiResource):
                 }],
             })
 
+    def get_url_map(self, name: str) -> GcpResource:
+        return self._get_resource(self.api.urlMaps(),
+                                  urlMap=name)
+
     def delete_url_map(self, name):
         self._delete_resource(self.api.urlMaps(), 'urlMap', name)
 
@@ -195,6 +203,10 @@ class ComputeV1(gcp.api.GcpProjectApiResource):
             'validate_for_proxyless': True,
         })
 
+    def get_target_grpc_proxy(self, name: str) -> GcpResource:
+        return self._get_resource(self.api.targetGrpcProxies(),
+                                  targetGrpcProxy=name)
+
     def delete_target_grpc_proxy(self, name):
         self._delete_resource(self.api.targetGrpcProxies(), 'targetGrpcProxy',
                               name)
@@ -208,6 +220,10 @@ class ComputeV1(gcp.api.GcpProjectApiResource):
             'name': name,
             'url_map': url_map.url,
         })
+
+    def get_target_http_proxy(self, name: str) -> GcpResource:
+        return self._get_resource(self.api.targetHttpProxies(),
+                                  targetHttpProxy=name)
 
     def delete_target_http_proxy(self, name):
         self._delete_resource(self.api.targetHttpProxies(), 'targetHttpProxy',
@@ -231,6 +247,10 @@ class ComputeV1(gcp.api.GcpProjectApiResource):
                 'network': network_url,
                 'target': target_proxy.url,
             })
+
+    def get_forwarding_rule(self, name: str) -> GcpResource:
+        return self._get_resource(self.api.globalForwardingRules(),
+                                  forwardingRule=name)
 
     def delete_forwarding_rule(self, name):
         self._delete_resource(self.api.globalForwardingRules(),

@@ -45,6 +45,7 @@ _CHECK_LOCAL_CERTS = flags.DEFINE_bool(
     "check_local_certs",
     default=True,
     help="Security Tests also check the value of local certs")
+# TODO(ericgribkoff) Here and elsewhere properly assign .value to a variable (if appropriate)
 USE_EXISTING_RESOURCES = flags.DEFINE_bool(
     "use_existing_resources",
     default=False,
