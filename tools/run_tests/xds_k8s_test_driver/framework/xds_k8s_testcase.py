@@ -45,6 +45,15 @@ _CHECK_LOCAL_CERTS = flags.DEFINE_bool(
     "check_local_certs",
     default=True,
     help="Security Tests also check the value of local certs")
+USE_EXISTING_RESOURCES = flags.DEFINE_bool(
+    "use_existing_resources",
+    default=False,
+    help="Use existing resources")
+# TODO(ericgribkoff) define interaction with _FORCE_CLEANUP
+KEEP_RESOURCES = flags.DEFINE_bool(
+    "keep_resources",
+    default=False,
+    help="Don't delete resources at exit")
 flags.adopt_module_key_flags(xds_flags)
 flags.adopt_module_key_flags(xds_k8s_flags)
 
@@ -119,6 +128,9 @@ class XdsKubernetesTestCase(absltest.TestCase):
 
     def tearDown(self):
         logger.info('----- TestMethod %s teardown -----', self.id())
+        if KEEP_RESOURCES.value:
+            logger.info('Skipping teardown since keep resources is set')
+            return
         retryer = retryers.constant_retryer(wait_fixed=_timedelta(seconds=10),
                                             attempts=3,
                                             log_level=logging.INFO)
