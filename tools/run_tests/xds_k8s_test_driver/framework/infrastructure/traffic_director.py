@@ -181,14 +181,15 @@ class TrafficDirectorManager:
         self.compute.delete_backend_service(name)
         self.backend_service = None
 
-    def backend_service_add_neg_backends(self, name, zones):
+    def backend_service_add_neg_backends(self, name, zones, reuse_existing=False):
         logger.info('Waiting for Network Endpoint Groups to load endpoints.')
         for zone in zones:
             backend = self.compute.wait_for_network_endpoint_group(name, zone)
             logger.info('Loaded NEG "%s" in zone %s', backend.name,
                         backend.zone)
             self.backends.add(backend)
-        self.backend_service_add_backends()
+        if not reuse_existing:
+            self.backend_service_add_backends()
 
     def backend_service_add_backends(self):
         logging.info('Adding backends to Backend Service %s: %r',

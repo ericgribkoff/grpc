@@ -247,28 +247,34 @@ class KubernetesClientRunner(base_runner.KubernetesBaseRunner):
         # TODO(sergiitk): make rpc UnaryCall enum or get it from proto
 
         # Create service account
-        self.service_account = self._create_service_account(
-            self.service_account_template,
-            service_account_name=self.service_account_name,
-            namespace_name=self.k8s_namespace.name,
-            gcp_service_account=self.gcp_service_account)
+        if self.reuse_namespace: # TODO(ericgribkoff) fix semantics (new flag)
+            self.service_account = self._reuse_service_account(self.service_account_name)
+        else:
+            self.service_account = self._create_service_account(
+                self.service_account_template,
+                service_account_name=self.service_account_name,
+                namespace_name=self.k8s_namespace.name,
+                gcp_service_account=self.gcp_service_account)
 
         # Always create a new deployment
-        self.deployment = self._create_deployment(
-            self.deployment_template,
-            deployment_name=self.deployment_name,
-            image_name=self.image_name,
-            namespace_name=self.k8s_namespace.name,
-            service_account_name=self.service_account_name,
-            td_bootstrap_image=self.td_bootstrap_image,
-            xds_server_uri=self.xds_server_uri,
-            network=self.network,
-            stats_port=self.stats_port,
-            server_target=server_target,
-            rpc=rpc,
-            qps=qps,
-            secure_mode=secure_mode,
-            print_response=print_response)
+        if self.reuse_namespace: # TODO(ericgribkoff) fix semantics (new flag)
+            self.deployment = self._reuse_deployment(self.deployment_name)
+        else:
+            self.deployment = self._create_deployment(
+                self.deployment_template,
+                deployment_name=self.deployment_name,
+                image_name=self.image_name,
+                namespace_name=self.k8s_namespace.name,
+                service_account_name=self.service_account_name,
+                td_bootstrap_image=self.td_bootstrap_image,
+                xds_server_uri=self.xds_server_uri,
+                network=self.network,
+                stats_port=self.stats_port,
+                server_target=server_target,
+                rpc=rpc,
+                qps=qps,
+                secure_mode=secure_mode,
+                print_response=print_response)
 
         self._wait_deployment_with_available_replicas(self.deployment_name)
 
@@ -295,6 +301,8 @@ class KubernetesClientRunner(base_runner.KubernetesBaseRunner):
         if self.port_forwarder:
             self.k8s_namespace.port_forward_stop(self.port_forwarder)
             self.port_forwarder = None
+        if self.reuse_namespace: # TODO(ericgribkoff) fix semantics (new flag)
+            return
         if self.deployment or force:
             self._delete_deployment(self.deployment_name)
             self.deployment = None

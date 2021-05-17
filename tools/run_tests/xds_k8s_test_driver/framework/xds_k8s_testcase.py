@@ -129,9 +129,6 @@ class XdsKubernetesTestCase(absltest.TestCase):
 
     def tearDown(self):
         logger.info('----- TestMethod %s teardown -----', self.id())
-        if KEEP_RESOURCES.value:
-            logger.info('Skipping teardown since keep resources is set')
-            return
         retryer = retryers.constant_retryer(wait_fixed=_timedelta(seconds=10),
                                             attempts=3,
                                             log_level=logging.INFO)
@@ -141,6 +138,11 @@ class XdsKubernetesTestCase(absltest.TestCase):
             logger.exception('Got error during teardown')
 
     def _cleanup(self):
+        if KEEP_RESOURCES.value:
+            # TODO(ericgribkoff) Fix semantics, brittle
+            logger.info('Skipping teardown since keep resources is set')
+            self.client_runner.cleanup(force=self.force_cleanup) # End port-forwarding
+            return
         self.td.cleanup(force=self.force_cleanup)
         self.client_runner.cleanup(force=self.force_cleanup)
         self.server_runner.cleanup(force=self.force_cleanup,
@@ -156,8 +158,9 @@ class XdsKubernetesTestCase(absltest.TestCase):
         neg_name, neg_zones = self.server_runner.k8s_namespace.get_service_neg(
             self.server_runner.service_name, self.server_port)
 
-        # Add backends to the Backend Service
-        self.td.backend_service_add_neg_backends(neg_name, neg_zones)
+        # if True: #not USE_EXISTING_RESOURCES.value:
+        #     # Add backends to the Backend Service
+        self.td.backend_service_add_neg_backends(neg_name, neg_zones, reuse_existing=USE_EXISTING_RESOURCES.value)
         if wait_for_healthy_status:
             self.td.wait_for_backends_healthy_status()
 
@@ -249,7 +252,9 @@ class RegularXdsKubernetesTestCase(XdsKubernetesTestCase):
             gcp_service_account=self.gcp_service_account,
             td_bootstrap_image=self.td_bootstrap_image,
             xds_server_uri=self.xds_server_uri,
-            network=self.network)
+            network=self.network,
+            reuse_namespace=USE_EXISTING_RESOURCES.value,
+            reuse_service=USE_EXISTING_RESOURCES.value)
 
         # Test Client Runner
         self.client_runner = client_app.KubernetesClientRunner(
@@ -263,7 +268,7 @@ class RegularXdsKubernetesTestCase(XdsKubernetesTestCase):
             network=self.network,
             debug_use_port_forwarding=self.debug_use_port_forwarding,
             stats_port=self.client_port,
-            reuse_namespace=self.server_namespace == self.client_namespace)
+            reuse_namespace=self.server_namespace == self.client_namespace or USE_EXISTING_RESOURCES.value)
 
     def startTestServer(self, replica_count=1, **kwargs) -> Iterable[XdsTestServer]:
         test_servers = self.server_runner.run(

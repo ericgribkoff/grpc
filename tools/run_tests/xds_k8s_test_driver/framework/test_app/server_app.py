@@ -224,27 +224,33 @@ class KubernetesServerRunner(base_runner.KubernetesBaseRunner):
         self._wait_service_neg(self.service_name, test_port)
 
         # Create service account
-        self.service_account = self._create_service_account(
-            self.service_account_template,
-            service_account_name=self.service_account_name,
-            namespace_name=self.k8s_namespace.name,
-            gcp_service_account=self.gcp_service_account)
+        if self.reuse_service: # TODO(ericgribkoff) fix semantics (new flag)
+            self.service_account = self._reuse_service_account(self.service_account_name)
+        else:
+            self.service_account = self._create_service_account(
+                self.service_account_template,
+                service_account_name=self.service_account_name,
+                namespace_name=self.k8s_namespace.name,
+                gcp_service_account=self.gcp_service_account)
 
         # Always create a new deployment
-        self.deployment = self._create_deployment(
-            self.deployment_template,
-            deployment_name=self.deployment_name,
-            image_name=self.image_name,
-            namespace_name=self.k8s_namespace.name,
-            service_account_name=self.service_account_name,
-            td_bootstrap_image=self.td_bootstrap_image,
-            xds_server_uri=self.xds_server_uri,
-            network=self.network,
-            replica_count=replica_count,
-            test_port=test_port,
-            maintenance_port=maintenance_port,
-            server_id=server_id,
-            secure_mode=secure_mode)
+        if self.reuse_service: # TODO(ericgribkoff) fix semantics (new flag)
+            self.deployment = self._reuse_deployment(self.deployment_name)
+        else:
+            self.deployment = self._create_deployment(
+                self.deployment_template,
+                deployment_name=self.deployment_name,
+                image_name=self.image_name,
+                namespace_name=self.k8s_namespace.name,
+                service_account_name=self.service_account_name,
+                td_bootstrap_image=self.td_bootstrap_image,
+                xds_server_uri=self.xds_server_uri,
+                network=self.network,
+                replica_count=replica_count,
+                test_port=test_port,
+                maintenance_port=maintenance_port,
+                server_id=server_id,
+                secure_mode=secure_mode)
 
         self._wait_deployment_with_available_replicas(self.deployment_name,
                                                       replica_count)
