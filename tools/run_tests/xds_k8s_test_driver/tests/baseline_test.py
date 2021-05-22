@@ -164,7 +164,7 @@ class BaselineTest(xds_k8s_testcase.RegularXdsKubernetesTestCase):
             default_test_servers[0].health_client.check_health()
             default_test_servers[1].health_client.check_health()
             default_test_servers[2].health_client.check_health()
-            for i in range(6):
+            for i in range(15):
                 self.getClientRpcStats(test_client, 100)
         # with self.subTest('11_setup_secondary_locality'):
         #     self.setupServerBackends(server_runner=self.server_runners['alternate']) #wait_for_healthy_status=False)

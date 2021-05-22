@@ -347,7 +347,7 @@ class KubernetesNamespace:
         logger.info('Shutting down port forwarding, pid %s', pf.pid)
         pf.kill()
         stdout, _stderr = pf.communicate(timeout=5)
-        logger.info('Port forwarding stopped')
+        logger.info('Port forwarding for stopped')
         logger.debug('Port forwarding remaining stdout: %s', stdout)
 
     @staticmethod

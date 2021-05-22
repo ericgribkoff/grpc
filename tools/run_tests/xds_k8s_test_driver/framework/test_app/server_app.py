@@ -34,6 +34,9 @@ _ChannelzServiceClient = grpc_channelz.ChannelzServiceClient
 _XdsUpdateHealthServiceClient = grpc_testing.XdsUpdateHealthServiceClient
 _HealthClient = grpc_testing.HealthClient
 
+# TODO(ericgribkoff) Ahem, fix this
+_FEARSOME_SERVER_PORT_OFFSET = 0
+
 class XdsTestServer(framework.rpc.grpc.GrpcApp):
     """
     Represents RPC services implemented in Server component of the xDS test app.
@@ -170,7 +173,8 @@ class KubernetesServerRunner(base_runner.KubernetesBaseRunner):
                  reuse_service=False,
                  reuse_namespace=False,
                  namespace_template=None,
-                 debug_use_port_forwarding=False):
+                 debug_use_port_forwarding=False,
+                 keep_resources=False):
         super().__init__(k8s_namespace, namespace_template, reuse_namespace)
 
         # Settings
@@ -192,6 +196,7 @@ class KubernetesServerRunner(base_runner.KubernetesBaseRunner):
         self.service_template = service_template
         self.reuse_service = reuse_service
         self.debug_use_port_forwarding = debug_use_port_forwarding
+        self.keep_resources = keep_resources
 
         # Mutable state
         self.deployment: Optional[k8s.V1Deployment] = None
@@ -289,17 +294,21 @@ class KubernetesServerRunner(base_runner.KubernetesBaseRunner):
             pod_ip = pod.status.pod_ip
             rpc_host = None
             # Experimental, for local debugging.
+            local_port = maintenance_port
             if self.debug_use_port_forwarding:
                 # TODO(ericgribkoff) Handle multiple replicas and port forwarding
-                logger.info('LOCAL DEV MODE: Enabling port forwarding to %s:%s',
-                            pod_ip, maintenance_port)
+                global _FEARSOME_SERVER_PORT_OFFSET
+                local_port = maintenance_port + _FEARSOME_SERVER_PORT_OFFSET
+                _FEARSOME_SERVER_PORT_OFFSET += 1
+                logger.info('LOCAL DEV MODE: Enabling port forwarding to %s:%s using local port %s',
+                            pod_ip, maintenance_port, local_port)
                 self.port_forwarder = self.k8s_namespace.port_forward_pod(
-                    pod, remote_port=maintenance_port)
+                    pod, remote_port=maintenance_port, local_port=local_port)
                 rpc_host = self.k8s_namespace.PORT_FORWARD_LOCAL_ADDRESS
 
             servers.append(XdsTestServer(ip=pod_ip,
                                  rpc_port=test_port,
-                                 maintenance_port=maintenance_port,
+                                 maintenance_port=local_port,
                                  secure_mode=secure_mode,
                                  server_id=server_id,
                                  rpc_host=rpc_host))
@@ -309,6 +318,8 @@ class KubernetesServerRunner(base_runner.KubernetesBaseRunner):
         if self.port_forwarder:
             self.k8s_namespace.port_forward_stop(self.port_forwarder)
             self.port_forwarder = None
+        if self.keep_resources: # TODO(ericgribkoff)
+            return
         if self.deployment or force:
             self._delete_deployment(self.deployment_name)
             self.deployment = None

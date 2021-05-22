@@ -79,7 +79,7 @@ class HealthClient(framework.rpc.grpc.GrpcClientHelper):
     stub: health_pb2_grpc.HealthStub
 
     def __init__(self, channel: grpc.Channel):
-        super().__init__(channel, test_pb2_grpc.HealthStub)
+        super().__init__(channel, health_pb2_grpc.HealthStub)
 
     def check_health(self):
         self.call_unary_with_deadline(rpc='Check',

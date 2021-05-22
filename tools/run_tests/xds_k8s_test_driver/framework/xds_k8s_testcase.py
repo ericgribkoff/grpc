@@ -146,6 +146,10 @@ class XdsKubernetesTestCase(absltest.TestCase):
             # TODO(ericgribkoff) Fix semantics, brittle
             logger.info('Skipping teardown since keep resources is set')
             self.client_runner.cleanup(force=self.force_cleanup) # End port-forwarding
+            # End port-forwarding
+            for server_runner in self.server_runners.values():
+                server_runner.cleanup(force=self.force_cleanup,
+                                      force_namespace=self.force_cleanup)
             return
         self.td.cleanup(force=self.force_cleanup)
         self.client_runner.cleanup(force=self.force_cleanup)
@@ -260,20 +264,24 @@ class RegularXdsKubernetesTestCase(XdsKubernetesTestCase):
             td_bootstrap_image=self.td_bootstrap_image,
             xds_server_uri=self.xds_server_uri,
             network=self.network,
+            debug_use_port_forwarding=self.debug_use_port_forwarding,
             reuse_namespace=USE_EXISTING_RESOURCES.value,
-            reuse_service=USE_EXISTING_RESOURCES.value)
+            reuse_service=USE_EXISTING_RESOURCES.value,
+            keep_resources=KEEP_RESOURCES.value)
 
         self.server_runners['alternate'] = server_app.KubernetesServerRunner(
             k8s.KubernetesNamespace(self.secondary_k8s_api_manager,
                                     self.server_namespace),
-            deployment_name=self.server_name,
+            deployment_name=self.server_name+'-alternate',
             image_name=self.server_image,
             gcp_service_account=self.gcp_service_account,
             td_bootstrap_image=self.td_bootstrap_image,
             xds_server_uri=self.xds_server_uri,
             network=self.network,
+            debug_use_port_forwarding=self.debug_use_port_forwarding,
             reuse_namespace=True,
-            reuse_service=USE_EXISTING_RESOURCES.value)
+            reuse_service=USE_EXISTING_RESOURCES.value,
+            keep_resources=KEEP_RESOURCES.value)
 
         # Test Client Runner
         self.client_runner = client_app.KubernetesClientRunner(
