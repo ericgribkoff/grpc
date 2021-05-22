@@ -202,7 +202,7 @@ class KubernetesServerRunner(base_runner.KubernetesBaseRunner):
         self.deployment: Optional[k8s.V1Deployment] = None
         self.service_account: Optional[k8s.V1ServiceAccount] = None
         self.service: Optional[k8s.V1Service] = None
-        self.port_forwarder = None
+        self.port_forwarders = []
 
     def run(self,
             *,
@@ -302,8 +302,8 @@ class KubernetesServerRunner(base_runner.KubernetesBaseRunner):
                 _FEARSOME_SERVER_PORT_OFFSET += 1
                 logger.info('LOCAL DEV MODE: Enabling port forwarding to %s:%s using local port %s',
                             pod_ip, maintenance_port, local_port)
-                self.port_forwarder = self.k8s_namespace.port_forward_pod(
-                    pod, remote_port=maintenance_port, local_port=local_port)
+                self.port_forwarders.append(self.k8s_namespace.port_forward_pod(
+                    pod, remote_port=maintenance_port, local_port=local_port))
                 rpc_host = self.k8s_namespace.PORT_FORWARD_LOCAL_ADDRESS
 
             servers.append(XdsTestServer(ip=pod_ip,
@@ -315,9 +315,10 @@ class KubernetesServerRunner(base_runner.KubernetesBaseRunner):
         return servers
 
     def cleanup(self, *, force=False, force_namespace=False):
-        if self.port_forwarder:
-            self.k8s_namespace.port_forward_stop(self.port_forwarder)
-            self.port_forwarder = None
+        if self.port_forwarders:
+            for port_forwarder in self.port_forwarders:
+                self.k8s_namespace.port_forward_stop(port_forwarder)
+            self.port_forwarders = []
         if self.keep_resources: # TODO(ericgribkoff)
             return
         if self.deployment or force:
