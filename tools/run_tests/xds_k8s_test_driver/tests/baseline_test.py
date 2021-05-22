@@ -64,7 +64,7 @@ class BaselineTest(xds_k8s_testcase.RegularXdsKubernetesTestCase):
             test_servers: list[_XdsTestServer] = self.startTestServer(replica_count=2)
 
         with self.subTest('6_add_server_backends_to_backend_service'):
-            self.setupServerBackends()
+            self.setupServerBackends() #wait_for_healthy_status=False)
 
         with self.subTest('7_start_test_client'):
             # TODO(ericgribkoff) clean up list
@@ -77,7 +77,8 @@ class BaselineTest(xds_k8s_testcase.RegularXdsKubernetesTestCase):
             self.assertSuccessfulRpcs(test_client)
 
         with self.subTest('9_test_round_robin'):
-            client_rpc_stats = self.getClientRpcStats(test_client, 100)
+            for i in range(30):
+                client_rpc_stats = self.getClientRpcStats(test_client, 100)
             requests_received = [client_rpc_stats.rpcs_by_peer[x] for x in client_rpc_stats.rpcs_by_peer]
             total_requests_received = sum(requests_received)
             self.assertEqual(total_requests_received, 100)
