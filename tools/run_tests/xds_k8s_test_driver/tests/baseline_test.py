@@ -70,7 +70,7 @@ class BaselineTest(xds_k8s_testcase.RegularXdsKubernetesTestCase):
 
         with self.subTest('7_start_test_client'):
             # TODO(ericgribkoff) clean up list
-            test_client: _XdsTestClient = self.startTestClient(test_servers[0])
+            test_client: _XdsTestClient = self.startTestClient(default_test_servers[0])
 
         with self.subTest('8_test_client_xds_config_exists'):
             self.assertXdsConfigExists(test_client)
@@ -84,7 +84,7 @@ class BaselineTest(xds_k8s_testcase.RegularXdsKubernetesTestCase):
             requests_received = [client_rpc_stats.rpcs_by_peer[x] for x in client_rpc_stats.rpcs_by_peer]
             total_requests_received = sum(requests_received)
             self.assertEqual(total_requests_received, 100)
-            expected_requests = total_requests_received / len(test_servers)
+            expected_requests = total_requests_received / len(default_test_servers)
             self.assertTrue(all([abs(x - expected_requests) <= 1 for x in requests_received]))
 
 

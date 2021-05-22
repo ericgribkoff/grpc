@@ -70,6 +70,7 @@ _DEFAULT_SECURE_MODE_MAINTENANCE_PORT = \
 
 class XdsKubernetesTestCase(absltest.TestCase):
     k8s_api_manager: k8s.KubernetesApiManager
+    secondary_k8s_api_manager: k8s.KubernetesApiManager
     gcp_api_manager: gcp.api.GcpApiManager
 
     @classmethod
@@ -109,6 +110,8 @@ class XdsKubernetesTestCase(absltest.TestCase):
         # Resource managers
         cls.k8s_api_manager = k8s.KubernetesApiManager(
             xds_k8s_flags.KUBE_CONTEXT.value)
+        cls.secondary_k8s_api_manager = k8s.KubernetesApiManager(
+            xds_k8s_flags.SECONDARY_KUBE_CONTEXT.value)
         cls.gcp_api_manager = gcp.api.GcpApiManager()
 
     def setUp(self):
@@ -125,6 +128,7 @@ class XdsKubernetesTestCase(absltest.TestCase):
     @classmethod
     def tearDownClass(cls):
         cls.k8s_api_manager.close()
+        cls.secondary_k8s_api_manager.close()
         cls.gcp_api_manager.close()
 
     def tearDown(self):
@@ -260,7 +264,7 @@ class RegularXdsKubernetesTestCase(XdsKubernetesTestCase):
             reuse_service=USE_EXISTING_RESOURCES.value)
 
         self.server_runners['alternate'] = server_app.KubernetesServerRunner(
-            k8s.KubernetesNamespace(self.k8s_api_manager,
+            k8s.KubernetesNamespace(self.secondary_k8s_api_manager,
                                     self.server_namespace),
             deployment_name=self.server_name,
             image_name=self.server_image,
