@@ -214,7 +214,9 @@ class KubernetesClientRunner(base_runner.KubernetesBaseRunner):
                  service_account_template='service-account.yaml',
                  reuse_namespace=False,
                  namespace_template=None,
-                 debug_use_port_forwarding=False):
+                 debug_use_port_forwarding=False,
+                 use_existing_resources=False,
+                 keep_resources=False):
         super().__init__(k8s_namespace, namespace_template, reuse_namespace)
 
         # Settings
@@ -230,6 +232,8 @@ class KubernetesClientRunner(base_runner.KubernetesBaseRunner):
         self.deployment_template = deployment_template
         self.service_account_template = service_account_template
         self.debug_use_port_forwarding = debug_use_port_forwarding
+        self.use_existing_resources = use_existing_resources
+        self.keep_resources = keep_resources
 
         # Mutable state
         self.deployment: Optional[k8s.V1Deployment] = None
@@ -247,7 +251,7 @@ class KubernetesClientRunner(base_runner.KubernetesBaseRunner):
         # TODO(sergiitk): make rpc UnaryCall enum or get it from proto
 
         # Create service account
-        if self.reuse_namespace: # TODO(ericgribkoff) fix semantics (new flag)
+        if self.use_existing_resources: # TODO(ericgribkoff)
             self.service_account = self._reuse_service_account(self.service_account_name)
         else:
             self.service_account = self._create_service_account(
@@ -257,7 +261,7 @@ class KubernetesClientRunner(base_runner.KubernetesBaseRunner):
                 gcp_service_account=self.gcp_service_account)
 
         # Always create a new deployment
-        if self.reuse_namespace: # TODO(ericgribkoff) fix semantics (new flag)
+        if self.use_existing_resources: # TODO(ericgribkoff)
             self.deployment = self._reuse_deployment(self.deployment_name)
         else:
             self.deployment = self._create_deployment(
@@ -301,7 +305,7 @@ class KubernetesClientRunner(base_runner.KubernetesBaseRunner):
         if self.port_forwarder:
             self.k8s_namespace.port_forward_stop(self.port_forwarder)
             self.port_forwarder = None
-        if self.reuse_namespace: # TODO(ericgribkoff) fix semantics (new flag)
+        if self.keep_resources: # TODO(ericgribkoff)
             return
         if self.deployment or force:
             self._delete_deployment(self.deployment_name)

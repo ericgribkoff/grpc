@@ -275,7 +275,6 @@ class KubernetesServerRunner(base_runner.KubernetesBaseRunner):
                     pod, remote_port=maintenance_port)
                 rpc_host = self.k8s_namespace.PORT_FORWARD_LOCAL_ADDRESS
 
-            # TODO - loop here, return tuple of XdsTestServers
             servers.append(XdsTestServer(ip=pod_ip,
                                  rpc_port=test_port,
                                  maintenance_port=maintenance_port,
