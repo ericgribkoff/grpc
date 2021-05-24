@@ -143,7 +143,7 @@ class ComputeV1(gcp.api.GcpProjectApiResource):
         backend_list = [{
             'group': backend.url,
             'balancingMode': 'RATE',
-            'maxRatePerEndpoint': 500
+            'maxRatePerEndpoint': 5, # TODO(ericgribkoff) This needs to be a parameter
         } for backend in backends]
 
         self._patch_resource(collection=self.api.backendServices(),

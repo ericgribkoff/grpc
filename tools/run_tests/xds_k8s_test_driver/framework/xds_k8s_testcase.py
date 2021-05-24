@@ -162,7 +162,7 @@ class XdsKubernetesTestCase(absltest.TestCase):
                                self.server_xds_port,
                                health_check_port=self.server_maintenance_port)
 
-    def setupServerBackends(self, *, server_runner=None, wait_for_healthy_status=True):
+    def setupServerBackends(self, *, server_runner=None, wait_for_healthy_status=True, alternate=False):
         if server_runner is None:
             server_runner = self.server_runners['default']
         # Load Backends
@@ -171,9 +171,14 @@ class XdsKubernetesTestCase(absltest.TestCase):
 
         # if True: #not USE_EXISTING_RESOURCES.value:
         #     # Add backends to the Backend Service
-        self.td.backend_service_add_neg_backends(neg_name, neg_zones, reuse_existing=USE_EXISTING_RESOURCES.value)
-        if wait_for_healthy_status:
-            self.td.wait_for_backends_healthy_status()
+        if alternate:
+            self.td.alternate_backend_service_add_neg_backends(neg_name, neg_zones, reuse_existing=USE_EXISTING_RESOURCES.value)
+            if wait_for_healthy_status:
+                self.td.wait_for_backends_healthy_status()
+        else:
+            self.td.backend_service_add_neg_backends(neg_name, neg_zones, reuse_existing=USE_EXISTING_RESOURCES.value)
+            if wait_for_healthy_status:
+                self.td.wait_for_backends_healthy_status()
 
     def assertSuccessfulRpcs(self,
                              test_client: XdsTestClient,
@@ -266,6 +271,21 @@ class RegularXdsKubernetesTestCase(XdsKubernetesTestCase):
             network=self.network,
             debug_use_port_forwarding=self.debug_use_port_forwarding,
             reuse_namespace=USE_EXISTING_RESOURCES.value,
+            reuse_service=USE_EXISTING_RESOURCES.value,
+            keep_resources=KEEP_RESOURCES.value)
+
+        # same zone
+        self.server_runners['secondary'] = server_app.KubernetesServerRunner(
+            k8s.KubernetesNamespace(self.k8s_api_manager,
+                                    self.server_namespace),
+            deployment_name=self.server_name + '-secondary',
+            image_name=self.server_image,
+            gcp_service_account=self.gcp_service_account,
+            td_bootstrap_image=self.td_bootstrap_image,
+            xds_server_uri=self.xds_server_uri,
+            network=self.network,
+            debug_use_port_forwarding=self.debug_use_port_forwarding,
+            reuse_namespace=True,
             reuse_service=USE_EXISTING_RESOURCES.value,
             keep_resources=KEEP_RESOURCES.value)
 
