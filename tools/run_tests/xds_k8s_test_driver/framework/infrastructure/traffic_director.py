@@ -43,7 +43,6 @@ EndpointConfigSelector = _NetworkServicesV1Alpha1.EndpointConfigSelector
 class TrafficDirectorManager:
     compute: _ComputeV1
     BACKEND_SERVICE_NAME = "backend-service"
-    ALTERNATE_BACKEND_SERVICE_NAME = "alternate-backend-service"
     HEALTH_CHECK_NAME = "health-check"
     URL_MAP_NAME = "url-map"
     URL_MAP_PATH_MATCHER_NAME = "path-matcher"

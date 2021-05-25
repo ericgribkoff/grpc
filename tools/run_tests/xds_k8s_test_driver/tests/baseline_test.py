@@ -21,6 +21,8 @@ from typing import List
 from typing import List
 
 from framework import xds_k8s_testcase
+from framework.infrastructure import k8s
+from framework.test_app import server_app
 
 logger = logging.getLogger(__name__)
 flags.adopt_module_key_flags(xds_k8s_testcase)
@@ -31,18 +33,21 @@ _XdsTestClient = xds_k8s_testcase.XdsTestClient
 
 
 class BaselineTest(xds_k8s_testcase.RegularXdsKubernetesTestCase):
+    ALTERNATE_BACKEND_SERVICE_NAME = 'alternate-backend-service'
 
-    def _basic_setup(self, negs=1, replica_count=2,
-        additional_backend_services=Optional[
-            List[str]]) -> None:
+    def _basic_setup(self,
+        primary_replica_count=1,
+        setup_alternate_backend_service=False,
+        use_alternate_region_neg=False,
+        use_secondary_neg=False) -> None:
         with self.subTest('00_create_health_check'):
             self.td.create_health_check()
 
         with self.subTest('01_create_backend_services'):
             self.td.create_backend_service()
-            if additional_backend_services is not None:
-                for name in additional_backend_services:
-                    self.td.create_backend_service(name=name)
+            if setup_alternate_backend_service:
+                self.td.create_backend_service(
+                    name=self.ALTERNATE_BACKEND_SERVICE_NAME)
 
         with self.subTest('02_create_url_map'):
             self.td.create_url_map(self.server_xds_host,
@@ -57,32 +62,53 @@ class BaselineTest(xds_k8s_testcase.RegularXdsKubernetesTestCase):
         with self.subTest('05_start_test_servers'):
             self._default_test_servers: List[
                 _XdsTestServer] = self.startTestServer(
-                replica_count=replica_count)
-            if negs == 2:
-                # TODO(ericgribkoff) Fix
+                server_runner=self.server_runners['default'],
+                replica_count=primary_replica_count)
+            if use_secondary_neg:
+                self.server_runners[
+                    'secondary'] = server_app.KubernetesServerRunner(
+                    k8s.KubernetesNamespace(self.k8s_api_manager,
+                                            self.server_namespace),
+                    deployment_name=self.server_name + '-same-zone',
+                    image_name=self.server_image,
+                    gcp_service_account=self.gcp_service_account,
+                    td_bootstrap_image=self.td_bootstrap_image,
+                    xds_server_uri=self.xds_server_uri,
+                    network=self.network,
+                    debug_use_port_forwarding=self.debug_use_port_forwarding,
+                    reuse_namespace=True)
                 self._same_zone_test_servers: List[
                     _XdsTestServer] = self.startTestServer(
                     server_runner=self.server_runners['secondary'],
-                    replica_count=replica_count)
-            if backend_services == 2:
-                self._same_zone_test_servers: list[
+                    replica_count=1)
+            if use_alternate_region_neg:
+                self.server_runners[
+                    'alternate'] = server_app.KubernetesServerRunner(
+                    k8s.KubernetesNamespace(self.secondary_k8s_api_manager,
+                                            self.server_namespace),
+                    deployment_name=self.server_name + '-alternate-region',
+                    image_name=self.server_image,
+                    gcp_service_account=self.gcp_service_account,
+                    td_bootstrap_image=self.td_bootstrap_image,
+                    xds_server_uri=self.xds_server_uri,
+                    network=self.network,
+                    debug_use_port_forwarding=self.debug_use_port_forwarding,
+                    reuse_namespace=True)
+                self._alternate_test_servers: list[
                     _XdsTestServer] = self.startTestServer(
-                    server_runner=self.server_runners['secondary'],
-                    replica_count=replica_count)
+                    server_runner=self.server_runners['alternate'],
+                    replica_count=1)
 
         with self.subTest('06_add_server_backends_to_backend_services'):
             self.setupServerBackends()
-            if negs == 2:
+            if use_secondary_neg:
                 self.setupServerBackends(
                     server_runner=self.server_runners['secondary'])
-            if additional_backend_services is not None:
-                for name in additional_backend_services:
-                    self.setupServerBackends(
-                        server_runner=self.server_runners['secondary'],
-                        bs_name=name)
+            if use_alternate_region_neg:
+                self.setupServerBackends(
+                    server_runner=self.server_runners['alternate'])
 
         with self.subTest('07_start_test_client'):
-            # TODO(ericgribkoff) clean up list
             self._test_client: _XdsTestClient = self.startTestClient(
                 self._default_test_servers[0])
 
@@ -97,7 +123,7 @@ class BaselineTest(xds_k8s_testcase.RegularXdsKubernetesTestCase):
         REPLICA_COUNT = 2
         NUM_RPCS = 100
         expected_rpcs_per_replica = NUM_RPCS / REPLICA_COUNT
-        self._basic_setup(replica_count=REPLICA_COUNT)
+        self._basic_setup(primary_replica_count=REPLICA_COUNT)
 
         rpcs_by_peer = self.getClientRpcStats(self._test_client,
                                               NUM_RPCS).rpcs_by_peer
@@ -116,7 +142,8 @@ class BaselineTest(xds_k8s_testcase.RegularXdsKubernetesTestCase):
     def test_traffic_director_failover(self):
         REPLICA_COUNT = 3
         NUM_RPCS = 300
-        self._basic_setup(replica_count=REPLICA_COUNT)
+        self._basic_setup(primary_replica_count=REPLICA_COUNT,
+                          use_alternate_region_neg=True)
 
         with self.subTest(
             '1_test_secondary_locality_receives_no_requests_on_partial_primary_failure'):
@@ -152,13 +179,13 @@ class BaselineTest(xds_k8s_testcase.RegularXdsKubernetesTestCase):
     @absltest.skip('skip')
     def test_traffic_director_remove_neg(self):
         NUM_RPCS = 300
-        self._basic_setup(negs=2, replica_count=1)
+        self._basic_setup(use_secondary_neg=True)
         self.getClientRpcStats(self._test_client, NUM_RPCS)
 
     def test_traffic_director_change_backend_service(self):
         ADDITIONAL_BACKEND_SERVICE = 'alternate-backend-service'
         NUM_RPCS = 300
-        self._basic_setup(negs=1, replica_count=1, backend_services=2)
+        self._basic_setup(setup_alternate_backend_service=True)
         self.td.patch_url_map(self.server_xds_host, self.server_xds_port,
                               ADDITIONAL_BACKEND_SERVICE)
         self.getClientRpcStats(self._test_client, NUM_RPCS)

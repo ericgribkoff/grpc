@@ -249,31 +249,6 @@ class RegularXdsKubernetesTestCase(XdsKubernetesTestCase):
             network=self.network,
             debug_use_port_forwarding=self.debug_use_port_forwarding)
 
-        # same zone
-        self.server_runners['secondary'] = server_app.KubernetesServerRunner(
-            k8s.KubernetesNamespace(self.k8s_api_manager,
-                                    self.server_namespace),
-            deployment_name=self.server_name + '-secondary',
-            image_name=self.server_image,
-            gcp_service_account=self.gcp_service_account,
-            td_bootstrap_image=self.td_bootstrap_image,
-            xds_server_uri=self.xds_server_uri,
-            network=self.network,
-            debug_use_port_forwarding=self.debug_use_port_forwarding,
-            reuse_namespace=True)
-
-        self.server_runners['alternate'] = server_app.KubernetesServerRunner(
-            k8s.KubernetesNamespace(self.secondary_k8s_api_manager,
-                                    self.server_namespace),
-            deployment_name=self.server_name+'-alternate',
-            image_name=self.server_image,
-            gcp_service_account=self.gcp_service_account,
-            td_bootstrap_image=self.td_bootstrap_image,
-            xds_server_uri=self.xds_server_uri,
-            network=self.network,
-            debug_use_port_forwarding=self.debug_use_port_forwarding,
-            reuse_namespace=True)
-
         # Test Client Runner
         self.client_runner = client_app.KubernetesClientRunner(
             k8s.KubernetesNamespace(self.k8s_api_manager,
@@ -288,9 +263,7 @@ class RegularXdsKubernetesTestCase(XdsKubernetesTestCase):
             stats_port=self.client_port,
             reuse_namespace=self.server_namespace == self.client_namespace)
 
-    def startTestServer(self, server_runner=None, replica_count=1, **kwargs) -> List[XdsTestServer]:
-        if server_runner is None:
-            server_runner = self.server_runners['default']
+    def startTestServer(self, server_runner, replica_count=1, **kwargs) -> List[XdsTestServer]:
         test_servers = server_runner.run(
             replica_count=replica_count,
             test_port=self.server_port,
