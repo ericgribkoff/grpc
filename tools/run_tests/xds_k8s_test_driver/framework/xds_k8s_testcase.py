@@ -162,23 +162,20 @@ class XdsKubernetesTestCase(absltest.TestCase):
                                self.server_xds_port,
                                health_check_port=self.server_maintenance_port)
 
-    def setupServerBackends(self, *, server_runner=None, wait_for_healthy_status=True, alternate=False):
+    def setupServerBackends(self, *, server_runner=None, bs_name=None, wait_for_healthy_status=True):
         if server_runner is None:
             server_runner = self.server_runners['default']
+        if bs_name is None:
+            bs_name = traffic_director.TrafficDirectorManager.BACKEND_SERVICE_NAME # TODO(ericgribkoff)
         # Load Backends
         neg_name, neg_zones = server_runner.k8s_namespace.get_service_neg(
             server_runner.service_name, self.server_port)
 
         # if True: #not USE_EXISTING_RESOURCES.value:
         #     # Add backends to the Backend Service
-        if alternate:
-            self.td.alternate_backend_service_add_neg_backends(neg_name, neg_zones, reuse_existing=USE_EXISTING_RESOURCES.value)
-            if wait_for_healthy_status:
-                self.td.wait_for_backends_healthy_status()
-        else:
-            self.td.backend_service_add_neg_backends(neg_name, neg_zones, reuse_existing=USE_EXISTING_RESOURCES.value)
-            if wait_for_healthy_status:
-                self.td.wait_for_backends_healthy_status()
+        self.td.backend_service_add_neg_backends(neg_name, neg_zones, bs_name=bs_name, reuse_existing=USE_EXISTING_RESOURCES.value)
+        if wait_for_healthy_status:
+            self.td.wait_for_backends_healthy_status()
 
     def assertSuccessfulRpcs(self,
                              test_client: XdsTestClient,

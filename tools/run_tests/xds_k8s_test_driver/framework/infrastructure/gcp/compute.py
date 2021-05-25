@@ -161,29 +161,16 @@ class ComputeV1(gcp.api.GcpProjectApiResource):
 
     def create_url_map(
         self,
-        name: str,
-        matcher_name: str,
-        src_hosts,
-        dst_default_backend_service: GcpResource,
-        dst_host_rule_match_backend_service: Optional[GcpResource] = None,
+        body: Dict[str, Any],
     ) -> GcpResource:
-        if dst_host_rule_match_backend_service is None:
-            dst_host_rule_match_backend_service = dst_default_backend_service
         return self._insert_resource(
-            self.api.urlMaps(), {
-                'name':
-                    name,
-                'defaultService':
-                    dst_default_backend_service.url,
-                'hostRules': [{
-                    'hosts': src_hosts,
-                    'pathMatcher': matcher_name,
-                }],
-                'pathMatchers': [{
-                    'name': matcher_name,
-                    'defaultService': dst_host_rule_match_backend_service.url,
-                }],
-            })
+            self.api.urlMaps(), body)
+
+    def patch_url_map(self, url_map: GcpResource, body: Dict[str, Any]):
+        return self._patch_resource(
+            collection=self.api.urlMaps(),
+            body=body,
+            urlMap=url_map.name)
 
     def get_url_map(self, name: str) -> GcpResource:
         return self._get_resource(self.api.urlMaps(),

@@ -39,10 +39,12 @@ class BaselineTest(xds_k8s_testcase.RegularXdsKubernetesTestCase):
         with self.subTest('1_create_backend_service'):
             if xds_k8s_testcase.USE_EXISTING_RESOURCES.value:
                 self.td.load_backend_service()
+                if backend_services == 2: # TODO(ericgribkoff) Fix
+                    self.td.load_backend_service(name=self.td.ALTERNATE_BACKEND_SERVICE_NAME)
             else:
                 self.td.create_backend_service()
-            if backend_services == 2: # TODO(ericgribkoff) Fix
-                self.td.create_alternate_backend_service()
+                if backend_services == 2: # TODO(ericgribkoff) Fix
+                    self.td.create_backend_service(name=self.td.ALTERNATE_BACKEND_SERVICE_NAME)
 
         with self.subTest('2_create_url_map'):
             if xds_k8s_testcase.USE_EXISTING_RESOURCES.value:
@@ -76,7 +78,7 @@ class BaselineTest(xds_k8s_testcase.RegularXdsKubernetesTestCase):
             if negs == 2:
                 self.setupServerBackends(server_runner=self.server_runners['secondary'])
             if backend_services == 2:
-                self.setupServerBackends(server_runner=self.server_runners['secondary'])
+                self.setupServerBackends(server_runner=self.server_runners['secondary'], bs_name=self.td.ALTERNATE_BACKEND_SERVICE_NAME)
             # self.setupServerBackends(server_runner=self.server_runners['alternate']) #wait_for_healthy_status=False)
 
         with self.subTest('7_start_test_client'):
@@ -147,7 +149,10 @@ class BaselineTest(xds_k8s_testcase.RegularXdsKubernetesTestCase):
 
     def test_traffic_director_change_backend_service(self):
         self._basic_setup(negs=1, replica_count=1, backend_services=2)
-        for i in range(5):
+        for i in range(2):
+            self.getClientRpcStats(self._test_client, 100)
+        self.td.patch_url_map(self.server_xds_host, self.server_xds_port, self.td.ALTERNATE_BACKEND_SERVICE_NAME)
+        for i in range(20):
             self.getClientRpcStats(self._test_client, 100)
 
 if __name__ == '__main__':

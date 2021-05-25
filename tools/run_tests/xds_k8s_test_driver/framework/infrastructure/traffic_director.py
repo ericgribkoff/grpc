@@ -12,7 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import logging
-from typing import List, Optional, Set
+from collections import defaultdict
+from typing import Any, Dict, List, Optional, Set
 
 from framework import xds_flags
 from framework.infrastructure import gcp
@@ -68,18 +69,17 @@ class TrafficDirectorManager:
 
         # Managed resources
         self.health_check: Optional[GcpResource] = None
-        self.backend_service: Optional[GcpResource] = None
+        self.backend_services: dict[str, Optional[GcpResource]] = {self.BACKEND_SERVICE_NAME: None,
+                                                                   self.ALTERNATE_BACKEND_SERVICE_NAME: None}
         # TODO(sergiitk): remove this flag once backend service resource loaded
         self.backend_service_protocol: Optional[BackendServiceProtocol] = None
-        self.alternate_backend_service: Optional[GcpResource] = None
-        self.alternate_backend_service_protocol: Optional[BackendServiceProtocol] = None
         self.url_map: Optional[GcpResource] = None
         self.firewall_rule: Optional[GcpResource] = None
         self.target_proxy: Optional[GcpResource] = None
         # TODO(sergiitk): remove this flag once target proxy resource loaded
         self.target_proxy_is_http: bool = False
         self.forwarding_rule: Optional[GcpResource] = None
-        self.backends: Set[ZonalGcpResource] = set()
+        self.backends: dict[str, Set[ZonalGcpResource]] = defaultdict(set) # keyed as with backend_services
 
     @property
     def network_url(self):
@@ -117,7 +117,7 @@ class TrafficDirectorManager:
         else:
             self.delete_target_grpc_proxy(force=force)
         self.delete_url_map(force=force)
-        self.delete_backend_service(force=force)
+        self.delete_backend_services(force=force)
         self.delete_health_check(force=force)
 
     def _ns_name(self, name):
@@ -156,113 +156,108 @@ class TrafficDirectorManager:
         self.health_check = None
 
     def create_backend_service(
-            self, protocol: Optional[BackendServiceProtocol] = _BackendGRPC):
+            self, name: str=BACKEND_SERVICE_NAME, protocol: Optional[BackendServiceProtocol] = _BackendGRPC):
         if protocol is None:
             protocol = _BackendGRPC
 
-        name = self._ns_name(self.BACKEND_SERVICE_NAME)
-        logger.info('Creating %s Backend Service "%s"', protocol.name, name)
+        ns_name = self._ns_name(name)
+        logger.info('Creating %s Backend Service "%s"', protocol.name, ns_name)
         resource = self.compute.create_backend_service_traffic_director(
-            name, health_check=self.health_check, protocol=protocol)
-        self.backend_service = resource
+            ns_name, health_check=self.health_check, protocol=protocol)
+        self.backend_services[name] = resource
         self.backend_service_protocol = protocol
 
-    def create_alternate_backend_service(
-        self, protocol: Optional[BackendServiceProtocol] = _BackendGRPC):
-        if protocol is None:
-            protocol = _BackendGRPC
-
-        name = self._ns_name(self.ALTERNATE_BACKEND_SERVICE_NAME)
-        logger.info('Creating %s Backend Service "%s"', protocol.name, name)
-        resource = self.compute.create_backend_service_traffic_director(
-            name, health_check=self.health_check, protocol=protocol)
-        self.alternate_backend_service = resource
-        self.alternate_backend_service = protocol
-
-    def load_backend_service(self, protocol: Optional[BackendServiceProtocol] = _BackendGRPC):
-        name = self._ns_name(self.BACKEND_SERVICE_NAME)
-        resource = self.compute.get_backend_service_traffic_director(name)
-        self.backend_service = resource
+    def load_backend_service(self, name: str=BACKEND_SERVICE_NAME, protocol: Optional[BackendServiceProtocol] = _BackendGRPC):
+        ns_name = self._ns_name(name)
+        resource = self.compute.get_backend_service_traffic_director(ns_name)
+        self.backend_services[name] = resource
         self.backend_service_protocol = protocol
 
-    def delete_backend_service(self, force=False):
-        if force:
-            name = self._ns_name(self.BACKEND_SERVICE_NAME)
-        elif self.backend_service:
-            name = self.backend_service.name
-        else:
-            return
-        logger.info('Deleting Backend Service "%s"', name)
-        self.compute.delete_backend_service(name)
-        self.backend_service = None
+    def delete_backend_services(self, force=False):
+        for name in self.backend_services.keys():
+            if force:
+                ns_name = self._ns_name(name)
+            elif name in self.backend_services:
+                ns_name = self.backend_services[name].name
+            else:
+                continue
+            logger.info('Deleting Backend Service "%s"', ns_name)
+            self.compute.delete_backend_service(ns_name)
+            self.backend_services[name] = None
 
-    def backend_service_add_neg_backends(self, name, zones, reuse_existing=False):
+    def backend_service_add_neg_backends(self, name, zones, bs_name: str=BACKEND_SERVICE_NAME, reuse_existing=False):
         logger.info('Waiting for Network Endpoint Groups to load endpoints.')
         for zone in zones:
             backend = self.compute.wait_for_network_endpoint_group(name, zone)
             logger.info('Loaded NEG "%s" in zone %s', backend.name,
                         backend.zone)
-            self.backends.add(backend)
+            self.backends[bs_name].add(backend)
         if not reuse_existing:
-            self.backend_service_add_backends()
+            self.backend_service_add_backends(bs_name)
 
-    def alternate_backend_service_add_neg_backends(self, name, zones, reuse_existing=False):
-        logger.info('Waiting for Network Endpoint Groups to load endpoints.')
-        for zone in zones:
-            backend = self.compute.wait_for_network_endpoint_group(name, zone)
-            logger.info('Loaded NEG "%s" in zone %s', backend.name,
-                        backend.zone)
-            self.backends.add(backend)
-        if not reuse_existing:
-            self.alternate_backend_service_add_backends()
-
-    def backend_service_add_backends(self):
+    def backend_service_add_backends(self,  bs_name: str=BACKEND_SERVICE_NAME):
         logging.info('Adding backends to Backend Service %s: %r',
-                     self.backend_service.name, self.backends)
-        self.compute.backend_service_add_backends(self.backend_service,
-                                                  self.backends)
+                     self.backend_services[bs_name].name, self.backends[bs_name])
+        self.compute.backend_service_add_backends(self.backend_services[bs_name],
+                                                  self.backends[bs_name])
 
-    def alternate_backend_service_add_backends(self):
-        logging.info('Adding backends to Backend Service %s: %r',
-                     self.alternate_backend_service.name, self.backends)
-        self.compute.backend_service_add_backends(self.alternate_backend_service,
-                                                  self.backends)
-
-    def backend_service_remove_all_backends(self):
+    def backend_service_remove_all_backends(self, bs_name: str=BACKEND_SERVICE_NAME):
         logging.info('Removing backends from Backend Service %s',
-                     self.backend_service.name)
-        self.compute.backend_service_remove_all_backends(self.backend_service)
+                     self.backend_services[bs_name].name)
+        self.compute.backend_service_remove_all_backends(self.backend_services[bs_name])
 
-    def wait_for_backends_healthy_status(self):
+    def wait_for_backends_healthy_status(self, bs_name: str=BACKEND_SERVICE_NAME):
         logger.debug(
             "Waiting for Backend Service %s to report all backends healthy %r",
-            self.backend_service, self.backends)
-        self.compute.wait_for_backends_healthy_status(self.backend_service,
-                                                      self.backends)
-
-    def wait_for_alternate_backends_healthy_status(self):
-        logger.debug(
-            "Waiting for Backend Service %s to report all backends healthy %r",
-            self.alternate_backend_service, self.backends)
-        self.compute.wait_for_backends_healthy_status(self.backend_service,
-                                                      self.backends)
-
+            self.backend_services[bs_name], self.backends[bs_name])
+        self.compute.wait_for_backends_healthy_status(self.backend_services[bs_name],
+                                                      self.backends[bs_name])
 
     def create_url_map(
         self,
         src_host: str,
         src_port: int,
+        bs_name: str=BACKEND_SERVICE_NAME,
     ) -> GcpResource:
         src_address = f'{src_host}:{src_port}'
         name = self._ns_name(self.URL_MAP_NAME)
         matcher_name = self._ns_name(self.URL_MAP_PATH_MATCHER_NAME)
         logger.info('Creating URL map "%s": %s -> %s', name, src_address,
-                    self.backend_service.name)
-        resource = self.compute.create_url_map(name, matcher_name,
+                    self.backend_services[bs_name].name)
+        resource = self.compute.create_url_map(self.generate_url_map_body(name, matcher_name,
                                                [src_address],
-                                               self.backend_service)
+                                               self.backend_services[bs_name]))
         self.url_map = resource
         return resource
+
+    def patch_url_map(
+        self, src_host: str, src_port: int, bs_name: str=BACKEND_SERVICE_NAME):
+        src_address = f'{src_host}:{src_port}'
+        name = self._ns_name(self.URL_MAP_NAME)
+        matcher_name = self._ns_name(self.URL_MAP_PATH_MATCHER_NAME)
+        logger.info('Creating URL map "%s": %s -> %s', name, src_address,
+                    self.backend_services[bs_name].name)
+        self.compute.patch_url_map(self.url_map, self.generate_url_map_body(name, matcher_name, [src_address],
+                                                                       self.backend_services[bs_name]))
+
+    def generate_url_map_body(self, name: str, matcher_name: str, src_hosts, dst_default_backend_service: GcpResource,
+        dst_host_rule_match_backend_service: Optional[GcpResource] = None) -> Dict[str, Any]:
+        if dst_host_rule_match_backend_service is None:
+            dst_host_rule_match_backend_service = dst_default_backend_service
+        return {
+            'name':
+                name,
+            'defaultService':
+                dst_default_backend_service.url,
+            'hostRules': [{
+                'hosts': src_hosts,
+                'pathMatcher': matcher_name,
+            }],
+            'pathMatchers': [{
+                'name': matcher_name,
+                'defaultService': dst_host_rule_match_backend_service.url,
+            }],
+        }
 
     def load_url_map(self):
         name = self._ns_name(self.URL_MAP_NAME)
@@ -558,18 +553,18 @@ class TrafficDirectorSecureManager(TrafficDirectorManager):
             logger.warning(
                 'Client TLS policy not created, '
                 'skipping attaching to Backend Service %s',
-                self.backend_service.name)
+                self.backend_services[self.BACKEND_SERVICE_NAME].name)
             return
 
         server_spiffe = (f'spiffe://{self.project}.svc.id.goog/'
                          f'ns/{server_namespace}/sa/{server_name}')
         logging.info(
             'Adding Client TLS Policy to Backend Service %s: %s, '
-            'server %s', self.backend_service.name, self.client_tls_policy.url,
+            'server %s', self.backend_services[self.BACKEND_SERVICE_NAME].name, self.client_tls_policy.url,
             server_spiffe)
 
         self.compute.patch_backend_service(
-            self.backend_service, {
+            self.backend_services[self.BACKEND_SERVICE_NAME], {
                 'securitySettings': {
                     'clientTlsPolicy': self.client_tls_policy.url,
                     'subjectAltNames': [server_spiffe]
