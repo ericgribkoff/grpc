@@ -94,7 +94,7 @@ class BaselineTest(xds_k8s_testcase.RegularXdsKubernetesTestCase):
                     network=self.network,
                     debug_use_port_forwarding=self.debug_use_port_forwarding,
                     reuse_namespace=True)
-                self._alternate_test_servers: list[
+                self._alternate_test_servers: List[
                     _XdsTestServer] = self.startTestServer(
                     server_runner=self.server_runners['alternate'],
                     replica_count=1)
@@ -107,6 +107,10 @@ class BaselineTest(xds_k8s_testcase.RegularXdsKubernetesTestCase):
             if use_alternate_region_neg:
                 self.setupServerBackends(
                     server_runner=self.server_runners['alternate'])
+            if setup_alternate_backend_service:
+                self.setupServerBackends(
+                    server_runner=self.server_runners['secondary'],
+                    bs_name=self.ALTERNATE_BACKEND_SERVICE_NAME)
 
         with self.subTest('07_start_test_client'):
             self._test_client: _XdsTestClient = self.startTestClient(

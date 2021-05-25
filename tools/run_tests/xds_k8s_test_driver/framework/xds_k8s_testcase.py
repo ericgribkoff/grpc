@@ -144,19 +144,19 @@ class XdsKubernetesTestCase(absltest.TestCase):
                                self.server_xds_port,
                                health_check_port=self.server_maintenance_port)
 
-    def setupServerBackends(self, *, server_runner=None, bs_name=None, wait_for_healthy_status=True):
+    def setupServerBackends(self, *, server_runner=None, bs_name=None,
+        wait_for_healthy_status=True):
         if server_runner is None:
             server_runner = self.server_runners['default']
-        if bs_name is None:
-            bs_name = traffic_director.TrafficDirectorManager.BACKEND_SERVICE_NAME # TODO(ericgribkoff)
         # Load Backends
         neg_name, neg_zones = server_runner.k8s_namespace.get_service_neg(
             server_runner.service_name, self.server_port)
 
         # Add backends to the Backend Service
-        self.td.backend_service_add_neg_backends(neg_name, neg_zones, bs_name=bs_name)
+        self.td.backend_service_add_neg_backends(neg_name, neg_zones,
+                                                 bs_name=bs_name)
         if wait_for_healthy_status:
-            self.td.wait_for_backends_healthy_status()
+            self.td.wait_for_backends_healthy_status(bs_name=bs_name)
 
     def assertSuccessfulRpcs(self,
                              test_client: XdsTestClient,
@@ -263,14 +263,16 @@ class RegularXdsKubernetesTestCase(XdsKubernetesTestCase):
             stats_port=self.client_port,
             reuse_namespace=self.server_namespace == self.client_namespace)
 
-    def startTestServer(self, server_runner, replica_count=1, **kwargs) -> List[XdsTestServer]:
+    def startTestServer(self, server_runner, replica_count=1, **kwargs) -> List[
+        XdsTestServer]:
         test_servers = server_runner.run(
             replica_count=replica_count,
             test_port=self.server_port,
             maintenance_port=self.server_maintenance_port,
             **kwargs)
         for test_server in test_servers:
-            test_server.set_xds_address(self.server_xds_host, self.server_xds_port)
+            test_server.set_xds_address(self.server_xds_host,
+                                        self.server_xds_port)
         return test_servers
 
     def startTestClient(self, test_server: XdsTestServer,
