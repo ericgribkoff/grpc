@@ -16,6 +16,7 @@ import enum
 import hashlib
 import logging
 import time
+from typing import List
 from typing import Optional, Tuple
 from google.protobuf import json_format
 from typing import Iterable, Optional, Tuple
@@ -45,16 +46,6 @@ _CHECK_LOCAL_CERTS = flags.DEFINE_bool(
     "check_local_certs",
     default=True,
     help="Security Tests also check the value of local certs")
-# TODO(ericgribkoff) Here and elsewhere properly assign .value to a variable (if appropriate)
-USE_EXISTING_RESOURCES = flags.DEFINE_bool(
-    "use_existing_resources",
-    default=False,
-    help="Use existing resources")
-# TODO(ericgribkoff) define interaction with _FORCE_CLEANUP
-KEEP_RESOURCES = flags.DEFINE_bool(
-    "keep_resources",
-    default=False,
-    help="Don't delete resources at exit")
 flags.adopt_module_key_flags(xds_flags)
 flags.adopt_module_key_flags(xds_k8s_flags)
 
@@ -142,15 +133,6 @@ class XdsKubernetesTestCase(absltest.TestCase):
             logger.exception('Got error during teardown')
 
     def _cleanup(self):
-        if KEEP_RESOURCES.value:
-            # TODO(ericgribkoff) Fix semantics, brittle
-            logger.info('Skipping teardown since keep resources is set')
-            self.client_runner.cleanup(force=self.force_cleanup) # End port-forwarding
-            # End port-forwarding
-            for server_runner in self.server_runners.values():
-                server_runner.cleanup(force=self.force_cleanup,
-                                      force_namespace=self.force_cleanup)
-            return
         self.td.cleanup(force=self.force_cleanup)
         self.client_runner.cleanup(force=self.force_cleanup)
         for server_runner in self.server_runners.values():
@@ -171,9 +153,8 @@ class XdsKubernetesTestCase(absltest.TestCase):
         neg_name, neg_zones = server_runner.k8s_namespace.get_service_neg(
             server_runner.service_name, self.server_port)
 
-        # if True: #not USE_EXISTING_RESOURCES.value:
-        #     # Add backends to the Backend Service
-        self.td.backend_service_add_neg_backends(neg_name, neg_zones, bs_name=bs_name, reuse_existing=USE_EXISTING_RESOURCES.value)
+        # Add backends to the Backend Service
+        self.td.backend_service_add_neg_backends(neg_name, neg_zones, bs_name=bs_name)
         if wait_for_healthy_status:
             self.td.wait_for_backends_healthy_status()
 
@@ -266,10 +247,7 @@ class RegularXdsKubernetesTestCase(XdsKubernetesTestCase):
             td_bootstrap_image=self.td_bootstrap_image,
             xds_server_uri=self.xds_server_uri,
             network=self.network,
-            debug_use_port_forwarding=self.debug_use_port_forwarding,
-            reuse_namespace=USE_EXISTING_RESOURCES.value,
-            reuse_service=USE_EXISTING_RESOURCES.value,
-            keep_resources=KEEP_RESOURCES.value)
+            debug_use_port_forwarding=self.debug_use_port_forwarding)
 
         # same zone
         self.server_runners['secondary'] = server_app.KubernetesServerRunner(
@@ -282,9 +260,7 @@ class RegularXdsKubernetesTestCase(XdsKubernetesTestCase):
             xds_server_uri=self.xds_server_uri,
             network=self.network,
             debug_use_port_forwarding=self.debug_use_port_forwarding,
-            reuse_namespace=True,
-            reuse_service=USE_EXISTING_RESOURCES.value,
-            keep_resources=KEEP_RESOURCES.value)
+            reuse_namespace=True)
 
         self.server_runners['alternate'] = server_app.KubernetesServerRunner(
             k8s.KubernetesNamespace(self.secondary_k8s_api_manager,
@@ -296,9 +272,7 @@ class RegularXdsKubernetesTestCase(XdsKubernetesTestCase):
             xds_server_uri=self.xds_server_uri,
             network=self.network,
             debug_use_port_forwarding=self.debug_use_port_forwarding,
-            reuse_namespace=True,
-            reuse_service=USE_EXISTING_RESOURCES.value,
-            keep_resources=KEEP_RESOURCES.value)
+            reuse_namespace=True)
 
         # Test Client Runner
         self.client_runner = client_app.KubernetesClientRunner(
@@ -312,11 +286,9 @@ class RegularXdsKubernetesTestCase(XdsKubernetesTestCase):
             network=self.network,
             debug_use_port_forwarding=self.debug_use_port_forwarding,
             stats_port=self.client_port,
-            reuse_namespace=self.server_namespace == self.client_namespace,
-            use_existing_resources = USE_EXISTING_RESOURCES.value,
-            keep_resources = KEEP_RESOURCES.value)
+            reuse_namespace=self.server_namespace == self.client_namespace)
 
-    def startTestServer(self, server_runner=None, replica_count=1, **kwargs) -> Iterable[XdsTestServer]:
+    def startTestServer(self, server_runner=None, replica_count=1, **kwargs) -> List[XdsTestServer]:
         if server_runner is None:
             server_runner = self.server_runners['default']
         test_servers = server_runner.run(

@@ -12,9 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import logging
+from typing import Optional
 
 from absl import flags
 from absl.testing import absltest
+from typing import List
+
 from typing import List
 
 from framework import xds_k8s_testcase
@@ -29,46 +32,31 @@ _XdsTestClient = xds_k8s_testcase.XdsTestClient
 
 class BaselineTest(xds_k8s_testcase.RegularXdsKubernetesTestCase):
 
-    def _basic_setup(self, negs=1, replica_count=2, backend_services=1):
+    def _basic_setup(self, negs=1, replica_count=2,
+        additional_backend_services=Optional[
+            List[str]]) -> None:
         with self.subTest('00_create_health_check'):
-            if xds_k8s_testcase.USE_EXISTING_RESOURCES.value:
-                self.td.load_health_check()
-            else:
-                self.td.create_health_check()
+            self.td.create_health_check()
 
-        with self.subTest('01_create_backend_service'):
-            if xds_k8s_testcase.USE_EXISTING_RESOURCES.value:
-                self.td.load_backend_service()
-                if backend_services == 2:  # TODO(ericgribkoff) Fix
-                    self.td.load_backend_service(
-                        name=self.td.ALTERNATE_BACKEND_SERVICE_NAME)
-            else:
-                self.td.create_backend_service()
-                if backend_services == 2:  # TODO(ericgribkoff) Fix
-                    self.td.create_backend_service(
-                        name=self.td.ALTERNATE_BACKEND_SERVICE_NAME)
+        with self.subTest('01_create_backend_services'):
+            self.td.create_backend_service()
+            if additional_backend_services is not None:
+                for name in additional_backend_services:
+                    self.td.create_backend_service(name=name)
 
         with self.subTest('02_create_url_map'):
-            if xds_k8s_testcase.USE_EXISTING_RESOURCES.value:
-                self.td.load_url_map()
-            else:
-                self.td.create_url_map(self.server_xds_host,
-                                       self.server_xds_port)
+            self.td.create_url_map(self.server_xds_host,
+                                   self.server_xds_port)
 
         with self.subTest('03_create_target_proxy'):
-            if xds_k8s_testcase.USE_EXISTING_RESOURCES.value:
-                self.td.load_target_proxy()
-            else:
-                self.td.create_target_proxy()
+            self.td.create_target_proxy()
 
         with self.subTest('04_create_forwarding_rule'):
-            if xds_k8s_testcase.USE_EXISTING_RESOURCES.value:
-                self.td.load_forwarding_rule()
-            else:
-                self.td.create_forwarding_rule(self.server_xds_port)
+            self.td.create_forwarding_rule(self.server_xds_port)
 
-        with self.subTest('05_start_test_server'):
-            self._default_test_servers: List[_XdsTestServer] = self.startTestServer(
+        with self.subTest('05_start_test_servers'):
+            self._default_test_servers: List[
+                _XdsTestServer] = self.startTestServer(
                 replica_count=replica_count)
             if negs == 2:
                 # TODO(ericgribkoff) Fix
@@ -82,15 +70,16 @@ class BaselineTest(xds_k8s_testcase.RegularXdsKubernetesTestCase):
                     server_runner=self.server_runners['secondary'],
                     replica_count=replica_count)
 
-        with self.subTest('06_add_server_backends_to_backend_service'):
+        with self.subTest('06_add_server_backends_to_backend_services'):
             self.setupServerBackends()
             if negs == 2:
                 self.setupServerBackends(
                     server_runner=self.server_runners['secondary'])
-            if backend_services == 2:
-                self.setupServerBackends(
-                    server_runner=self.server_runners['secondary'],
-                    bs_name=self.td.ALTERNATE_BACKEND_SERVICE_NAME)
+            if additional_backend_services is not None:
+                for name in additional_backend_services:
+                    self.setupServerBackends(
+                        server_runner=self.server_runners['secondary'],
+                        bs_name=name)
 
         with self.subTest('07_start_test_client'):
             # TODO(ericgribkoff) clean up list
@@ -171,7 +160,7 @@ class BaselineTest(xds_k8s_testcase.RegularXdsKubernetesTestCase):
         NUM_RPCS = 300
         self._basic_setup(negs=1, replica_count=1, backend_services=2)
         self.td.patch_url_map(self.server_xds_host, self.server_xds_port,
-                              self.td.ALTERNATE_BACKEND_SERVICE_NAME)
+                              ADDITIONAL_BACKEND_SERVICE)
         self.getClientRpcStats(self._test_client, NUM_RPCS)
 
 

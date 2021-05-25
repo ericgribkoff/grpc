@@ -69,8 +69,7 @@ class TrafficDirectorManager:
 
         # Managed resources
         self.health_check: Optional[GcpResource] = None
-        self.backend_services: dict[str, Optional[GcpResource]] = {self.BACKEND_SERVICE_NAME: None,
-                                                                   self.ALTERNATE_BACKEND_SERVICE_NAME: None}
+        self.backend_services: dict[str, Optional[GcpResource]] = {self.BACKEND_SERVICE_NAME: None}
         # TODO(sergiitk): remove this flag once backend service resource loaded
         self.backend_service_protocol: Optional[BackendServiceProtocol] = None
         self.url_map: Optional[GcpResource] = None
