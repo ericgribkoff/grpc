@@ -118,7 +118,6 @@ class BaselineTest(xds_k8s_testcase.RegularXdsKubernetesTestCase):
         with self.subTest('09_test_server_received_rpcs_from_test_client'):
             self.assertSuccessfulRpcs(self._test_client)
 
-    @absltest.skip('skip')
     def test_traffic_director_round_robin(self):
         REPLICA_COUNT = 2
         NUM_RPCS = 100
@@ -138,7 +137,6 @@ class BaselineTest(xds_k8s_testcase.RegularXdsKubernetesTestCase):
                 abs(rpcs_by_peer[peer] - expected_rpcs_per_replica) <= 1,
                 f'Wrong number of RPCs for {peer}')
 
-    @absltest.skip('skip')
     def test_traffic_director_failover(self):
         REPLICA_COUNT = 3
         NUM_RPCS = 300
@@ -176,18 +174,16 @@ class BaselineTest(xds_k8s_testcase.RegularXdsKubernetesTestCase):
             client_rpc_stats = self.getClientRpcStats(self._test_client,
                                                       NUM_RPCS)
 
-    @absltest.skip('skip')
     def test_traffic_director_remove_neg(self):
         NUM_RPCS = 300
         self._basic_setup(use_secondary_neg=True)
         self.getClientRpcStats(self._test_client, NUM_RPCS)
 
     def test_traffic_director_change_backend_service(self):
-        ADDITIONAL_BACKEND_SERVICE = 'alternate-backend-service'
         NUM_RPCS = 300
         self._basic_setup(setup_alternate_backend_service=True)
         self.td.patch_url_map(self.server_xds_host, self.server_xds_port,
-                              ADDITIONAL_BACKEND_SERVICE)
+                              self.ALTERNATE_BACKEND_SERVICE_NAME)
         self.getClientRpcStats(self._test_client, NUM_RPCS)
 
 
