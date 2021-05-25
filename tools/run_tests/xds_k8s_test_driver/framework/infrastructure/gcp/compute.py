@@ -77,10 +77,6 @@ class ComputeV1(gcp.api.GcpProjectApiResource):
                 health_check_field: health_check_settings,
             })
 
-    def get_health_check(self, name: str) -> GcpResource:
-        return self._get_resource(self.api.healthChecks(),
-                                  healthCheck=name)
-
     def delete_health_check(self, name):
         self._delete_resource(self.api.healthChecks(), 'healthCheck', name)
 
@@ -143,7 +139,8 @@ class ComputeV1(gcp.api.GcpProjectApiResource):
         backend_list = [{
             'group': backend.url,
             'balancingMode': 'RATE',
-            'maxRatePerEndpoint': 5, # TODO(ericgribkoff) This needs to be a parameter
+            # TODO(ericgribkoff) maxRate must be a param for failover tests
+            'maxRatePerEndpoint': 5,
         } for backend in backends]
 
         self._patch_resource(collection=self.api.backendServices(),
@@ -172,10 +169,6 @@ class ComputeV1(gcp.api.GcpProjectApiResource):
             body=body,
             urlMap=url_map.name)
 
-    def get_url_map(self, name: str) -> GcpResource:
-        return self._get_resource(self.api.urlMaps(),
-                                  urlMap=name)
-
     def delete_url_map(self, name):
         self._delete_resource(self.api.urlMaps(), 'urlMap', name)
 
@@ -190,10 +183,6 @@ class ComputeV1(gcp.api.GcpProjectApiResource):
             'validate_for_proxyless': True,
         })
 
-    def get_target_grpc_proxy(self, name: str) -> GcpResource:
-        return self._get_resource(self.api.targetGrpcProxies(),
-                                  targetGrpcProxy=name)
-
     def delete_target_grpc_proxy(self, name):
         self._delete_resource(self.api.targetGrpcProxies(), 'targetGrpcProxy',
                               name)
@@ -207,10 +196,6 @@ class ComputeV1(gcp.api.GcpProjectApiResource):
             'name': name,
             'url_map': url_map.url,
         })
-
-    def get_target_http_proxy(self, name: str) -> GcpResource:
-        return self._get_resource(self.api.targetHttpProxies(),
-                                  targetHttpProxy=name)
 
     def delete_target_http_proxy(self, name):
         self._delete_resource(self.api.targetHttpProxies(), 'targetHttpProxy',
@@ -234,10 +219,6 @@ class ComputeV1(gcp.api.GcpProjectApiResource):
                 'network': network_url,
                 'target': target_proxy.url,
             })
-
-    def get_forwarding_rule(self, name: str) -> GcpResource:
-        return self._get_resource(self.api.globalForwardingRules(),
-                                  forwardingRule=name)
 
     def delete_forwarding_rule(self, name):
         self._delete_resource(self.api.globalForwardingRules(),

@@ -138,11 +138,6 @@ class TrafficDirectorManager:
         resource = self.compute.create_health_check(name, protocol, port=port)
         self.health_check = resource
 
-    def load_health_check(self):
-        name = self._ns_name(self.HEALTH_CHECK_NAME)
-        resource = self.compute.get_health_check(name)
-        self.health_check = resource
-
     def delete_health_check(self, force=False):
         if force:
             name = self._ns_name(self.HEALTH_CHECK_NAME)
@@ -258,11 +253,6 @@ class TrafficDirectorManager:
             }],
         }
 
-    def load_url_map(self):
-        name = self._ns_name(self.URL_MAP_NAME)
-        resource = self.compute.get_url_map(name)
-        self.url_map = resource
-
     def delete_url_map(self, force=False):
         if force:
             name = self._ns_name(self.URL_MAP_NAME)
@@ -290,18 +280,6 @@ class TrafficDirectorManager:
         logger.info('Creating target %s proxy "%s" to URL map %s', name,
                     target_proxy_type, self.url_map.name)
         self.target_proxy = create_proxy_fn(name, self.url_map)
-
-    def load_target_proxy(self):
-        name = self._ns_name(self.TARGET_PROXY_NAME)
-        if self.backend_service_protocol is BackendServiceProtocol.GRPC:
-            resource = self.compute.get_target_grpc_proxy(name)
-            self.target_proxy_is_http = False
-        elif self.backend_service_protocol is BackendServiceProtocol.HTTP2:
-            resource = self.compute.get_target_http_proxy(name)
-            self.target_proxy_is_http = True
-        else:
-            raise TypeError('Unexpected backend service protocol')
-        self.target_proxy = resource
 
     def delete_target_grpc_proxy(self, force=False):
         if force:
@@ -338,11 +316,6 @@ class TrafficDirectorManager:
                                                        self.network_url)
         self.forwarding_rule = resource
         return resource
-
-    def load_forwarding_rule(self):
-        name = self._ns_name(self.FORWARDING_RULE_NAME)
-        resource = self.compute.get_forwarding_rule(name)
-        self.forwarding_rule = resource
 
     def delete_forwarding_rule(self, force=False):
         if force:

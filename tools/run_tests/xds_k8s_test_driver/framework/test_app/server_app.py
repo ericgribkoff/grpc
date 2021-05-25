@@ -78,14 +78,6 @@ class XdsTestServer(framework.rpc.grpc.GrpcApp):
         return _HealthClient(self._make_channel(
             self.maintenance_port))
 
-    #
-    #
-    # def set_serving(self):
-    #     """
-    #     Shortcut to LoadBalancerStatsServiceClient.get_client_stats()
-    #     """
-    #     return self.update_health_service.set_serving()
-
     def set_xds_address(self, xds_host, xds_port: Optional[int] = None):
         self.xds_host, self.xds_port = xds_host, xds_port
 
@@ -173,8 +165,7 @@ class KubernetesServerRunner(base_runner.KubernetesBaseRunner):
                  reuse_service=False,
                  reuse_namespace=False,
                  namespace_template=None,
-                 debug_use_port_forwarding=False,
-                 keep_resources=False):
+                 debug_use_port_forwarding=False):
         super().__init__(k8s_namespace, namespace_template, reuse_namespace)
 
         # Settings
@@ -196,7 +187,6 @@ class KubernetesServerRunner(base_runner.KubernetesBaseRunner):
         self.service_template = service_template
         self.reuse_service = reuse_service
         self.debug_use_port_forwarding = debug_use_port_forwarding
-        self.keep_resources = keep_resources
 
         # Mutable state
         self.deployment: Optional[k8s.V1Deployment] = None
@@ -211,9 +201,6 @@ class KubernetesServerRunner(base_runner.KubernetesBaseRunner):
             secure_mode=False,
             server_id=None,
             replica_count=1) -> Iterator[XdsTestServer]:
-        # # TODO(sergiitk): multiple replicas
-        # if replica_count != 1:
-        #     raise NotImplementedError("Multiple replicas not yet supported")
 
         # Implementation detail: in secure mode, maintenance ("backchannel")
         # port must be different from the test port so communication with
@@ -251,33 +238,27 @@ class KubernetesServerRunner(base_runner.KubernetesBaseRunner):
         self._wait_service_neg(self.service_name, test_port)
 
         # Create service account
-        if self.reuse_service: # TODO(ericgribkoff) fix semantics (new flag)
-            self.service_account = self._reuse_service_account(self.service_account_name)
-        else:
-            self.service_account = self._create_service_account(
-                self.service_account_template,
-                service_account_name=self.service_account_name,
-                namespace_name=self.k8s_namespace.name,
-                gcp_service_account=self.gcp_service_account)
+        self.service_account = self._create_service_account(
+            self.service_account_template,
+            service_account_name=self.service_account_name,
+            namespace_name=self.k8s_namespace.name,
+            gcp_service_account=self.gcp_service_account)
 
         # Always create a new deployment
-        if self.reuse_service: # TODO(ericgribkoff) fix semantics (new flag)
-            self.deployment = self._reuse_deployment(self.deployment_name)
-        else:
-            self.deployment = self._create_deployment(
-                self.deployment_template,
-                deployment_name=self.deployment_name,
-                image_name=self.image_name,
-                namespace_name=self.k8s_namespace.name,
-                service_account_name=self.service_account_name,
-                td_bootstrap_image=self.td_bootstrap_image,
-                xds_server_uri=self.xds_server_uri,
-                network=self.network,
-                replica_count=replica_count,
-                test_port=test_port,
-                maintenance_port=maintenance_port,
-                server_id=server_id,
-                secure_mode=secure_mode)
+        self.deployment = self._create_deployment(
+            self.deployment_template,
+            deployment_name=self.deployment_name,
+            image_name=self.image_name,
+            namespace_name=self.k8s_namespace.name,
+            service_account_name=self.service_account_name,
+            td_bootstrap_image=self.td_bootstrap_image,
+            xds_server_uri=self.xds_server_uri,
+            network=self.network,
+            replica_count=replica_count,
+            test_port=test_port,
+            maintenance_port=maintenance_port,
+            server_id=server_id,
+            secure_mode=secure_mode)
 
         self._wait_deployment_with_available_replicas(self.deployment_name,
                                                       replica_count)
@@ -289,14 +270,11 @@ class KubernetesServerRunner(base_runner.KubernetesBaseRunner):
         for pod in pods:
             self._wait_pod_started(pod.metadata.name)
 
-            # TODO(sergiitk): This is why multiple replicas not yet supported
-            # pod = pods[0]
             pod_ip = pod.status.pod_ip
             rpc_host = None
             # Experimental, for local debugging.
             local_port = maintenance_port
             if self.debug_use_port_forwarding:
-                # TODO(ericgribkoff) Handle multiple replicas and port forwarding
                 global _FEARSOME_SERVER_PORT_OFFSET
                 local_port = maintenance_port + _FEARSOME_SERVER_PORT_OFFSET
                 _FEARSOME_SERVER_PORT_OFFSET += 1
@@ -319,8 +297,6 @@ class KubernetesServerRunner(base_runner.KubernetesBaseRunner):
             for port_forwarder in self.port_forwarders:
                 self.k8s_namespace.port_forward_stop(port_forwarder)
             self.port_forwarders = []
-        if self.keep_resources: # TODO(ericgribkoff)
-            return
         if self.deployment or force:
             self._delete_deployment(self.deployment_name)
             self.deployment = None

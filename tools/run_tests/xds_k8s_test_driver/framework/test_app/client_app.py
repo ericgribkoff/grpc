@@ -214,9 +214,7 @@ class KubernetesClientRunner(base_runner.KubernetesBaseRunner):
                  service_account_template='service-account.yaml',
                  reuse_namespace=False,
                  namespace_template=None,
-                 debug_use_port_forwarding=False,
-                 use_existing_resources=False,
-                 keep_resources=False):
+                 debug_use_port_forwarding=False):
         super().__init__(k8s_namespace, namespace_template, reuse_namespace)
 
         # Settings
@@ -232,8 +230,6 @@ class KubernetesClientRunner(base_runner.KubernetesBaseRunner):
         self.deployment_template = deployment_template
         self.service_account_template = service_account_template
         self.debug_use_port_forwarding = debug_use_port_forwarding
-        self.use_existing_resources = use_existing_resources
-        self.keep_resources = keep_resources
 
         # Mutable state
         self.deployment: Optional[k8s.V1Deployment] = None
@@ -250,35 +246,28 @@ class KubernetesClientRunner(base_runner.KubernetesBaseRunner):
         super().run()
         # TODO(sergiitk): make rpc UnaryCall enum or get it from proto
 
-        # Create service account
-        if self.use_existing_resources: # TODO(ericgribkoff)
-            self.service_account = self._reuse_service_account(self.service_account_name)
-        else:
-            self.service_account = self._create_service_account(
-                self.service_account_template,
-                service_account_name=self.service_account_name,
-                namespace_name=self.k8s_namespace.name,
-                gcp_service_account=self.gcp_service_account)
+        self.service_account = self._create_service_account(
+            self.service_account_template,
+            service_account_name=self.service_account_name,
+            namespace_name=self.k8s_namespace.name,
+            gcp_service_account=self.gcp_service_account)
 
         # Always create a new deployment
-        if self.use_existing_resources: # TODO(ericgribkoff)
-            self.deployment = self._reuse_deployment(self.deployment_name)
-        else:
-            self.deployment = self._create_deployment(
-                self.deployment_template,
-                deployment_name=self.deployment_name,
-                image_name=self.image_name,
-                namespace_name=self.k8s_namespace.name,
-                service_account_name=self.service_account_name,
-                td_bootstrap_image=self.td_bootstrap_image,
-                xds_server_uri=self.xds_server_uri,
-                network=self.network,
-                stats_port=self.stats_port,
-                server_target=server_target,
-                rpc=rpc,
-                qps=qps,
-                secure_mode=secure_mode,
-                print_response=print_response)
+        self.deployment = self._create_deployment(
+            self.deployment_template,
+            deployment_name=self.deployment_name,
+            image_name=self.image_name,
+            namespace_name=self.k8s_namespace.name,
+            service_account_name=self.service_account_name,
+            td_bootstrap_image=self.td_bootstrap_image,
+            xds_server_uri=self.xds_server_uri,
+            network=self.network,
+            stats_port=self.stats_port,
+            server_target=server_target,
+            rpc=rpc,
+            qps=qps,
+            secure_mode=secure_mode,
+            print_response=print_response)
 
         self._wait_deployment_with_available_replicas(self.deployment_name)
 
@@ -305,8 +294,6 @@ class KubernetesClientRunner(base_runner.KubernetesBaseRunner):
         if self.port_forwarder:
             self.k8s_namespace.port_forward_stop(self.port_forwarder)
             self.port_forwarder = None
-        if self.keep_resources: # TODO(ericgribkoff)
-            return
         if self.deployment or force:
             self._delete_deployment(self.deployment_name)
             self.deployment = None
