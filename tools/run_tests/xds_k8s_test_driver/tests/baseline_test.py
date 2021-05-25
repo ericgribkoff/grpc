@@ -15,6 +15,7 @@ import logging
 
 from absl import flags
 from absl.testing import absltest
+from typing import List
 
 from framework import xds_k8s_testcase
 
@@ -67,12 +68,11 @@ class BaselineTest(xds_k8s_testcase.RegularXdsKubernetesTestCase):
                 self.td.create_forwarding_rule(self.server_xds_port)
 
         with self.subTest('05_start_test_server'):
-            self._default_test_servers: list[
-                _XdsTestServer] = self.startTestServer(
+            self._default_test_servers: List[_XdsTestServer] = self.startTestServer(
                 replica_count=replica_count)
             if negs == 2:
                 # TODO(ericgribkoff) Fix
-                self._same_zone_test_servers: list[
+                self._same_zone_test_servers: List[
                     _XdsTestServer] = self.startTestServer(
                     server_runner=self.server_runners['secondary'],
                     replica_count=replica_count)

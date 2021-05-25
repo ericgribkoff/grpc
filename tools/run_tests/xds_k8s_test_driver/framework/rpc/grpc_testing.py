@@ -64,15 +64,13 @@ class XdsUpdateHealthServiceClient(framework.rpc.grpc.GrpcClientHelper):
 
     def set_serving(self):
         self.call_unary_with_deadline(rpc='SetServing',
-                                             req=empty_pb2.Empty(),
-                                             log_level=logging.INFO)
-
+                                      req=empty_pb2.Empty(),
+                                      log_level=logging.INFO)
 
     def set_not_serving(self):
         self.call_unary_with_deadline(rpc='SetNotServing',
                                       req=empty_pb2.Empty(),
                                       log_level=logging.INFO)
-
 
 
 class HealthClient(framework.rpc.grpc.GrpcClientHelper):
