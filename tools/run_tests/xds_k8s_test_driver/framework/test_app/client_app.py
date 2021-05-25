@@ -246,6 +246,7 @@ class KubernetesClientRunner(base_runner.KubernetesBaseRunner):
         super().run()
         # TODO(sergiitk): make rpc UnaryCall enum or get it from proto
 
+        # Create service account
         self.service_account = self._create_service_account(
             self.service_account_template,
             service_account_name=self.service_account_name,
